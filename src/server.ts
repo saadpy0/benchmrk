@@ -1,6 +1,8 @@
 import Fastify from 'fastify';
 import { authRoutes } from './modules/auth/auth.routes.js';
 import { authenticate } from './middleware/authenticate.js';
+import { creatorRoutes } from './modules/creators/creator.routes.js';
+import { brandRoutes } from './modules/brands/brand.routes.js';
 
 const app = Fastify({ logger: true });
 
@@ -15,6 +17,8 @@ app.get('/me', { preHandler: authenticate }, async (request, reply) => {
 });
 
 app.register(authRoutes);
+app.register(creatorRoutes, { prefix: '/' });
+app.register(brandRoutes, { prefix: '/' });
 
 const start = async () => {
   try {
