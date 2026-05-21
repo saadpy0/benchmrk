@@ -7,7 +7,17 @@ const app = Fastify({
 const PORT = 3000;
 
 app.get('/health', async (request, reply) => {
-  return { status: 'ok', message: 'Server is running' };
+  return { 
+    status: 'ok', 
+    message: 'Benchmrk API is running',
+    version: '1.0.0'
+  };
+});
+
+app.get('/', async (request, reply) => {
+  return { 
+    message: 'Welcome to Benchmrk API'
+  };
 });
 
 const start = async () => {
