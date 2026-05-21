@@ -1,14 +1,15 @@
 import Fastify from 'fastify';
+import { authRoutes } from './modules/auth/auth.routes.js';
 
-const app = Fastify({
-  logger: true,
-});
+const app = Fastify({ logger: true });
 
 const PORT = 3000;
 
-app.get('/health', async (request, reply) => {
-  return { status: 'ok', message: 'Server is running' };
+app.get('/health', async () => {
+  return { status: 'ok', message: 'Benchmrk API is running', version: '1.0.0' };
 });
+
+app.register(authRoutes);
 
 const start = async () => {
   try {
