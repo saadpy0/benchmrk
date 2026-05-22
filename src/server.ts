@@ -8,6 +8,7 @@ import { applicationRoutes } from './modules/campaigns/application.routes.js';
 import { submissionRoutes } from './modules/campaigns/submission.routes.js';
 import { adminRoutes } from './modules/admin/admin.routes.js';
 import { kycRoutes } from './modules/creators/kyc/kyc.routes.js';
+import { payoutRoutes } from './modules/payouts/payout.routes.js';
 
 const app = Fastify({ logger: true });
 
@@ -29,6 +30,7 @@ app.register(applicationRoutes, { prefix: '/' });
 app.register(submissionRoutes, { prefix: '/' });
 app.register(adminRoutes, { prefix: '/' });
 app.register(kycRoutes, { prefix: '/' });
+app.register(payoutRoutes, { prefix: '/' });
 
 const start = async () => {
   try {
