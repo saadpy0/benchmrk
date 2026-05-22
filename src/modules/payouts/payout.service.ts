@@ -1,5 +1,7 @@
 import { prisma } from '../../lib/prisma.js';
 import { Decimal } from '@prisma/client/runtime/library.js';
+import { calculateTds } from './providers/tds.service.js';
+import { RazorpayStub } from './providers/razorpay.stub.js';
 
 export async function getOrCreateWallet(creatorId: string) {
   const profile = await prisma.creatorProfile.findUnique({ where: { userId: creatorId } });
@@ -26,7 +28,6 @@ export async function getWalletBalance(creatorId: string) {
 }
 
 export async function creditEarnings(creatorProfileId: string, amount: Decimal) {
-  // called by the verification engine when views are confirmed
   const wallet = await prisma.earningsWallet.upsert({
     where: { creatorId: creatorProfileId },
     update: {
@@ -54,7 +55,7 @@ export async function requestPayout(creatorId: string, amount: number, upiId: st
   if (!wallet) throw new Error('No earnings wallet found');
 
   const requestedAmount = new Decimal(amount);
-  const minimumPayout = new Decimal(100); // ₹100 minimum
+  const minimumPayout = new Decimal(100);
 
   if (requestedAmount.lessThan(minimumPayout)) {
     throw new Error('Minimum payout amount is ₹100');
@@ -64,7 +65,13 @@ export async function requestPayout(creatorId: string, amount: number, upiId: st
     throw new Error('Insufficient balance');
   }
 
-  // deduct from wallet and create payout record in one transaction
+  // calculate TDS
+  const { tdsAmount, netAmount, tdsApplicable } = calculateTds(
+    amount,
+    parseFloat(wallet.totalEarned.toString())
+  );
+
+  // deduct from wallet and create payout record
   const [updatedWallet, payout] = await prisma.$transaction([
     prisma.earningsWallet.update({
       where: { creatorId: profile.id },
@@ -73,14 +80,35 @@ export async function requestPayout(creatorId: string, amount: number, upiId: st
     prisma.payout.create({
       data: {
         walletId: wallet.id,
-        amount: requestedAmount,
+        amount: new Decimal(netAmount),
         upiId,
         status: 'PENDING',
       },
     }),
   ]);
 
-  return payout;
+  // trigger payment via Razorpay stub
+  const razorpay = new RazorpayStub();
+  const paymentResult = await razorpay.sendPayout(
+    netAmount,
+    upiId,
+    profile.displayName,
+    payout.id
+  );
+
+  // update payout status based on payment result
+  await prisma.payout.update({
+    where: { id: payout.id },
+    data: { status: paymentResult.success ? 'COMPLETED' : 'FAILED' },
+  });
+
+  return {
+    payout,
+    tdsApplicable,
+    tdsAmount,
+    netAmount,
+    paymentResult,
+  };
 }
 
 export async function getPayoutHistory(creatorId: string) {
