@@ -19,6 +19,10 @@
 - Added baseline rebuild request schema.
 - Added baseline service to calculate average views, engagement rate, consistency score, and trust score.
 - Added baseline routes to rebuild and fetch a creator baseline.
+- Added a lightweight Fastify-served Phase 2 test page at `/dev/phase2`.
+- Added a live YouTube baseline rebuild path using public channel data from the YouTube Data API.
+- Added Google OAuth YouTube ownership verification routes and persisted connected YouTube accounts in the database.
+- Added baseline rebuild support using the stored connected YouTube account instead of a typed channel input.
 - Wired creator profile creation to initialize a wallet automatically.
 - Registered the baseline routes in the Fastify server.
 - Verified that Prisma schema validation passes with the new Phase 2 code in place.

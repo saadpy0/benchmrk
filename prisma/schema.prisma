@@ -68,8 +68,9 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  creatorProfile CreatorProfile?
-  brandProfile   BrandProfile?
+  creatorProfile   CreatorProfile?
+  brandProfile     BrandProfile?
+  connectedAccounts ConnectedPlatformAccount[]
 }
 
 model CreatorProfile {
@@ -86,6 +87,29 @@ model CreatorProfile {
   submissions  ContentSubmission[]
   baselines    CreatorBaseline[]
   wallet       CreatorWallet?
+}
+
+model ConnectedPlatformAccount {
+  id                String   @id @default(uuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id])
+  platform          Platform
+  providerAccountId String
+  channelTitle      String?
+  publishedAt       DateTime?
+  subscriberCount   Int?
+  uploadsPlaylistId String?
+  accessToken       String?
+  refreshToken      String?
+  scopes            String?
+  tokenType         String?
+  tokenExpiresAt    DateTime?
+  isPrimary         Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([platform, providerAccountId])
+  @@index([userId, platform])
 }
 
 model BrandProfile {

@@ -1,5 +1,7 @@
 import type { FastifyInstance } from 'fastify';
+import { authenticate } from '../../middleware/auth.js';
 import { signup, login } from './auth.service.js';
+import { buildYouTubeOAuthUrl, completeYouTubeOAuth } from './youtube-oauth.service.js';
 import { signupSchema, loginSchema } from './auth.schema.js';
 
 
