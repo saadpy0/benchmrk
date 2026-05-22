@@ -1,6 +1,7 @@
-import { FastifyInstance } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import { signup, login } from './auth.service.js';
 import { signupSchema, loginSchema } from './auth.schema.js';
+
 
 export async function authRoutes(app: FastifyInstance) {
   app.post('/auth/signup', { schema: signupSchema }, async (request, reply) => {

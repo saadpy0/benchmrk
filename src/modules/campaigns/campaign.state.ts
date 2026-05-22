@@ -1,4 +1,4 @@
-import { CampaignStatus } from '@prisma/client';
+import type { CampaignStatus } from '@prisma/client';
 
 const transitions: Record<CampaignStatus, CampaignStatus[]> = {
   DRAFT:          ['PENDING_REVIEW'],

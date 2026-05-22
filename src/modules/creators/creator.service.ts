@@ -5,7 +5,14 @@ export async function createCreatorProfile(userId: string, displayName: string, 
   if (existing) throw new Error('Profile already exists');
 
   return prisma.creatorProfile.create({
-    data: { userId, displayName, bio },
+    data: {
+      userId,
+      displayName,
+      ...(bio !== undefined ? { bio } : {}),
+      wallet: {
+        create: {},
+      },
+    },
   });
 }
 

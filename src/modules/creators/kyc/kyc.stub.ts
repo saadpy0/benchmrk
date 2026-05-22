@@ -1,4 +1,4 @@
-import { KycProvider, KycResult } from './kyc.provider.js';
+import type { KycProvider, KycResult } from './kyc.provider.js';
 
 export class KycStub implements KycProvider {
   async verifyPAN(pan: string, name: string): Promise<KycResult> {

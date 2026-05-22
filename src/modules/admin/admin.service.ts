@@ -1,5 +1,5 @@
 import { prisma } from '../../lib/prisma.js';
-import { CampaignStatus } from '@prisma/client';
+import type { CampaignStatus } from '@prisma/client';
 import { canTransition } from '../campaigns/campaign.state.js';
 
 export async function getAllUsers() {

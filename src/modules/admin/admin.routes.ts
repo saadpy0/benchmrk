@@ -1,5 +1,5 @@
-import { FastifyInstance } from 'fastify';
-import { authenticate } from '../../middleware/authenticate.js';
+import type { FastifyInstance } from 'fastify';
+import { authenticate } from '../../middleware/auth.js';
 import {
   getAllUsers,
   getPendingCampaigns,
