@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import { authRoutes } from './modules/auth/auth.routes.js';
+import { instagramOAuthRoutes } from './modules/auth/instagram-oauth.routes.js';
 import { youtubeOAuthRoutes } from './modules/auth/youtube-oauth.routes.js';
 import { authenticate } from './middleware/auth.js';
 import { creatorRoutes } from './modules/creators/creator.routes.js';
@@ -27,6 +28,7 @@ app.get('/me', { preHandler: authenticate }, async (request, reply) => {
 });
 
 app.register(authRoutes);
+app.register(instagramOAuthRoutes);
 app.register(youtubeOAuthRoutes);
 app.register(creatorRoutes, { prefix: '/' });
 app.register(baselineRoutes, { prefix: '/' });
