@@ -110,6 +110,7 @@ model ConnectedPlatformAccount {
 
   @@unique([platform, providerAccountId])
   @@index([userId, platform])
+  wallet       EarningsWallet?
 }
 
 model BrandProfile {
@@ -237,4 +238,33 @@ model BalanceLedgerEntry {
 
   @@index([walletId, createdAt])
   @@index([submissionId])
+}
+model EarningsWallet {
+  id              String   @id @default(uuid())
+  creatorId       String   @unique
+  creator         CreatorProfile @relation(fields: [creatorId], references: [id])
+  balance         Decimal  @default(0)
+  totalEarned     Decimal  @default(0)
+  updatedAt       DateTime @updatedAt
+
+  payouts         Payout[]
+}
+
+model Payout {
+  id              String        @id @default(uuid())
+  walletId        String
+  wallet          EarningsWallet @relation(fields: [walletId], references: [id])
+  amount          Decimal
+  status          PayoutStatus  @default(PENDING)
+  upiId           String?
+  bankAccount     String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
 }
