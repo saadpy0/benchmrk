@@ -23,6 +23,7 @@
 - Added a live YouTube baseline rebuild path using public channel data from the YouTube Data API.
 - Added Google OAuth YouTube ownership verification routes and persisted connected YouTube accounts in the database.
 - Added baseline rebuild support using the stored connected YouTube account instead of a typed channel input.
+- Added Instagram professional-account OAuth linking, connected account persistence, and connected-account baseline rebuild support.
 - Wired creator profile creation to initialize a wallet automatically.
 - Registered the baseline routes in the Fastify server.
 - Verified that Prisma schema validation passes with the new Phase 2 code in place.

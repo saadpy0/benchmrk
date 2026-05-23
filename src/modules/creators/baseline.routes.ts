@@ -3,6 +3,8 @@ import { Platform } from '@prisma/client';
 import { authenticate } from '../../middleware/auth.js';
 import { rebuildBaselineSchema } from './baseline.schema.js';
 import { getCreatorBaseline, rebuildCreatorBaseline } from './baseline.service.js';
+import { rebuildConnectedInstagramBaselineSchema } from './instagram-connected-baseline.schema.js';
+import { rebuildInstagramBaselineFromConnectedAccount } from './instagram-baseline.service.js';
 import { rebuildConnectedYoutubeBaselineSchema } from './youtube-connected-baseline.schema.js';
 import { rebuildYoutubeBaselineSchema } from './youtube-baseline.schema.js';
 import { rebuildYoutubeBaselineFromChannel, rebuildYoutubeBaselineFromConnectedAccount } from './youtube-baseline.service.js';
@@ -75,6 +77,27 @@ export async function baselineRoutes(app: FastifyInstance) {
 
     try {
       const result = await rebuildYoutubeBaselineFromConnectedAccount({
+        userId: request.user.userId,
+        ...(body.maxResults !== undefined ? { maxResults: body.maxResults } : {}),
+      });
+
+      return reply.code(200).send(result);
+    } catch (err: any) {
+      return reply.code(400).send({ error: err.message });
+    }
+  });
+
+  app.post('/creators/baseline/rebuild/instagram-connected', { preHandler: authenticate, schema: rebuildConnectedInstagramBaselineSchema }, async (request, reply) => {
+    if (request.user.role !== 'CREATOR') {
+      return reply.code(403).send({ error: 'Only creators can rebuild their connected Instagram baseline' });
+    }
+
+    const body = request.body as {
+      maxResults?: number;
+    };
+
+    try {
+      const result = await rebuildInstagramBaselineFromConnectedAccount({
         userId: request.user.userId,
         ...(body.maxResults !== undefined ? { maxResults: body.maxResults } : {}),
       });
