@@ -68,6 +68,7 @@ model CreatorProfile {
 
   applications Application[]
   submissions  ContentSubmission[]
+  wallet       EarningsWallet?
 }
 
 model BrandProfile {
@@ -129,4 +130,33 @@ model ContentSubmission {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+model EarningsWallet {
+  id              String   @id @default(uuid())
+  creatorId       String   @unique
+  creator         CreatorProfile @relation(fields: [creatorId], references: [id])
+  balance         Decimal  @default(0)
+  totalEarned     Decimal  @default(0)
+  updatedAt       DateTime @updatedAt
+
+  payouts         Payout[]
+}
+
+model Payout {
+  id              String        @id @default(uuid())
+  walletId        String
+  wallet          EarningsWallet @relation(fields: [walletId], references: [id])
+  amount          Decimal
+  status          PayoutStatus  @default(PENDING)
+  upiId           String?
+  bankAccount     String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
 }
