@@ -75,6 +75,19 @@ async function fetchMediaViewLikeMetric(accessToken: string, mediaId: string) {
   return 0;
 }
 
+function resolveInstagramAccountAgeDays(postTimestamps: Array<string | null>) {
+  const timestamps = postTimestamps
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => new Date(value).getTime())
+    .filter((value) => Number.isFinite(value));
+
+  if (timestamps.length === 0) {
+    return 30;
+  }
+
+  return Math.max(0, Math.floor((Date.now() - Math.min(...timestamps)) / (1000 * 60 * 60 * 24)));
+}
+
 export async function rebuildInstagramBaselineFromConnectedAccount(input: {
   userId: string;
   maxResults?: number;
@@ -106,9 +119,6 @@ export async function rebuildInstagramBaselineFromConnectedAccount(input: {
   });
 
   const media = mediaResponse.data ?? [];
-  if (media.length === 0) {
-    throw new Error('No Instagram media found for this account');
-  }
 
   const posts = await Promise.all(
     media.map(async (item) => {
@@ -126,14 +136,7 @@ export async function rebuildInstagramBaselineFromConnectedAccount(input: {
     }),
   );
 
-  const timestamps = posts
-    .map((post) => post.timestamp)
-    .filter((value): value is string => typeof value === 'string')
-    .map((value) => new Date(value).getTime())
-    .filter((value) => Number.isFinite(value));
-
-  const oldestTimestamp = timestamps.length === 0 ? Date.now() - 90 * 24 * 60 * 60 * 1000 : Math.min(...timestamps);
-  const accountAgeDays = Math.max(30, Math.floor((Date.now() - oldestTimestamp) / (1000 * 60 * 60 * 24)));
+  const accountAgeDays = resolveInstagramAccountAgeDays(posts.map((post) => post.timestamp));
   const followerCount = connectedAccount.subscriberCount ?? undefined;
 
   const result = await rebuildCreatorBaseline({
