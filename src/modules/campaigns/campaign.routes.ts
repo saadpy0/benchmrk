@@ -1,8 +1,8 @@
-import { FastifyInstance } from 'fastify';
-import { authenticate } from '../../middleware/authenticate.js';
+import type { FastifyInstance } from 'fastify';
+import { authenticate } from '../../middleware/auth.js';
 import { createCampaign, getCampaigns, getCampaignById, updateCampaignStatus } from './campaign.service.js';
 import { createCampaignSchema, updateStatusSchema } from './campaign.schema.js';
-import { CampaignStatus } from '@prisma/client';
+import type { CampaignStatus } from '@prisma/client';
 
 export async function campaignRoutes(app: FastifyInstance) {
   // brand creates a campaign

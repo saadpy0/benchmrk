@@ -1,7 +1,10 @@
 import Fastify from 'fastify';
 import { authRoutes } from './modules/auth/auth.routes.js';
-import { authenticate } from './middleware/authenticate.js';
+import { youtubeOAuthRoutes } from './modules/auth/youtube-oauth.routes.js';
+import { authenticate } from './middleware/auth.js';
 import { creatorRoutes } from './modules/creators/creator.routes.js';
+import { baselineRoutes } from './modules/creators/baseline.routes.js';
+import { baselineDevRoutes } from './modules/creators/baseline.dev.routes.js';
 import { brandRoutes } from './modules/brands/brand.routes.js';
 import { campaignRoutes } from './modules/campaigns/campaign.routes.js';
 import { applicationRoutes } from './modules/campaigns/application.routes.js';
@@ -24,7 +27,10 @@ app.get('/me', { preHandler: authenticate }, async (request, reply) => {
 });
 
 app.register(authRoutes);
+app.register(youtubeOAuthRoutes);
 app.register(creatorRoutes, { prefix: '/' });
+app.register(baselineRoutes, { prefix: '/' });
+app.register(baselineDevRoutes, { prefix: '/' });
 app.register(brandRoutes, { prefix: '/' });
 app.register(campaignRoutes, { prefix: '/' });
 app.register(applicationRoutes, { prefix: '/' });

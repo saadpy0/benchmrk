@@ -1,6 +1,7 @@
-import { FastifyInstance } from 'fastify';
-import { authenticate } from '../../../middleware/authenticate.js';
+import type { FastifyInstance } from 'fastify';
+import { authenticate } from '../../../middleware/auth.js';
 import { submitKyc, getKycStatus } from './kyc.service.js';
+
 
 export async function kycRoutes(app: FastifyInstance) {
   app.post('/creators/kyc', { preHandler: authenticate }, async (request, reply) => {
