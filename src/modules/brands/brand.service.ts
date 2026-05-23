@@ -5,7 +5,11 @@ export async function createBrandProfile(userId: string, companyName: string, gs
   if (existing) throw new Error('Brand profile already exists');
 
   return prisma.brandProfile.create({
-    data: { userId, companyName, gstNumber },
+    data: {
+      userId,
+      companyName,
+      ...(gstNumber !== undefined ? { gstNumber } : {}),
+    },
   });
 }
 

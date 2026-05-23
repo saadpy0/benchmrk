@@ -1,4 +1,4 @@
-import { CampaignStatus } from '@prisma/client';
+import type { CampaignStatus } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 import { canTransition } from './campaign.state.js';
 
@@ -34,7 +34,7 @@ export async function createCampaign(
 
 export async function getCampaigns(status?: CampaignStatus) {
   return prisma.campaign.findMany({
-    where: status ? { status } : undefined,
+    ...(status ? { where: { status } } : {}),
     include: { brand: { select: { companyName: true } } },
     orderBy: { createdAt: 'desc' },
   });

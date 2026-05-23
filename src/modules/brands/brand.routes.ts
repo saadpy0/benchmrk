@@ -1,7 +1,8 @@
-import { FastifyInstance } from 'fastify';
-import { authenticate } from '../../middleware/authenticate.js';
+import type { FastifyInstance } from 'fastify';
+import { authenticate } from '../../middleware/auth.js';
 import { createBrandProfile, getBrandProfile } from './brand.service.js';
 import { createBrandProfileSchema } from './brand.schema.js';
+
 
 export async function brandRoutes(app: FastifyInstance) {
   app.post('/brands/profile', { preHandler: authenticate, schema: createBrandProfileSchema }, async (request, reply) => {

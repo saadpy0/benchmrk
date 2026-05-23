@@ -1,6 +1,7 @@
-import { FastifyInstance } from 'fastify';
-import { authenticate } from '../../middleware/authenticate.js';
+import type { FastifyInstance } from 'fastify';
+import { authenticate } from '../../middleware/auth.js';
 import { applyToCampaign, getMyApplications } from './application.service.js';
+
 
 export async function applicationRoutes(app: FastifyInstance) {
   app.post('/campaigns/:id/apply', { preHandler: authenticate }, async (request, reply) => {
