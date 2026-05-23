@@ -117,6 +117,13 @@ const page = String.raw`<!doctype html>
           <button id="youtube-connect-btn">Connect YouTube Account</button>
           <button id="youtube-connected-baseline-btn">Rebuild Baseline From Connected YouTube</button>
         </section>
+
+        <section class="card">
+          <h2>7. Connect Instagram</h2>
+          <p>Verify a professional Instagram account through Instagram Login before rebuilding the Instagram baseline.</p>
+          <button id="instagram-connect-btn">Connect Instagram Account</button>
+          <button id="instagram-connected-baseline-btn">Rebuild Baseline From Connected Instagram</button>
+        </section>
       </div>
 
       <section class="card wide">
@@ -137,6 +144,12 @@ const page = String.raw`<!doctype html>
         if (event.origin !== window.location.origin) return;
         if (event.data?.type !== 'youtube-connect-result') return;
         render(event.data.payload, 'YOUTUBE OAUTH RESULT');
+      });
+
+      window.addEventListener('message', (event) => {
+        if (event.origin !== window.location.origin) return;
+        if (event.data?.type !== 'instagram-connect-result') return;
+        render(event.data.payload, 'INSTAGRAM OAUTH RESULT');
       });
 
       function render(result, meta) {
@@ -240,6 +253,23 @@ const page = String.raw`<!doctype html>
 
       document.getElementById('youtube-connected-baseline-btn').onclick = async () => {
         await api('/creators/baseline/rebuild/youtube-connected', {
+          method: 'POST',
+          body: JSON.stringify({
+            maxResults: Number(document.getElementById('youtube-max-results').value),
+          }),
+        });
+      };
+
+      document.getElementById('instagram-connect-btn').onclick = async () => {
+        const data = await api('/auth/instagram/start');
+        const popup = window.open(data.authUrl, 'instagram-oauth', 'width=520,height=720');
+        if (!popup) {
+          render({ error: 'Popup blocked. Allow popups for localhost and try again.' }, 'INSTAGRAM OAUTH');
+        }
+      };
+
+      document.getElementById('instagram-connected-baseline-btn').onclick = async () => {
+        await api('/creators/baseline/rebuild/instagram-connected', {
           method: 'POST',
           body: JSON.stringify({
             maxResults: Number(document.getElementById('youtube-max-results').value),
