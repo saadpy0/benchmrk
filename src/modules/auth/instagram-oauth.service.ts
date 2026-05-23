@@ -12,7 +12,7 @@ type OAuthStatePayload = {
 type InstagramTokenResponse = {
   access_token?: string;
   user_id?: string | number;
-  permissions?: string;
+  permissions?: string | string[];
   token_type?: string;
   expires_in?: number;
   error_type?: string;
@@ -59,11 +59,19 @@ function normalizeNullableInt(value: unknown) {
   return Math.round(parsed);
 }
 
+function serializePermissions(value?: string | string[]) {
+  if (value === undefined) return undefined;
+  if (Array.isArray(value)) {
+    return value.join(',');
+  }
+  return value;
+}
+
 async function persistConnectedInstagramAccounts(input: {
   userId: string;
   accounts: ConnectedInstagramAccount[];
   accessToken: string;
-  permissions?: string;
+  permissions?: string | string[];
   tokenType?: string;
   expiresIn?: number;
 }) {
@@ -88,6 +96,7 @@ async function persistConnectedInstagramAccounts(input: {
 
   const existingByAccountId = new Map(existingAccounts.map((account) => [account.providerAccountId, account]));
   const tokenExpiresAt = input.expiresIn === undefined ? null : new Date(Date.now() + input.expiresIn * 1000);
+  const serializedPermissions = serializePermissions(input.permissions);
 
   const storedAccounts = await Promise.all(
     input.accounts.map((account, index) => {
@@ -108,7 +117,7 @@ async function persistConnectedInstagramAccounts(input: {
           uploadsPlaylistId: account.accountType,
           accessToken: input.accessToken,
           refreshToken: null,
-          scopes: input.permissions ?? null,
+          scopes: serializedPermissions ?? null,
           tokenType: input.tokenType ?? null,
           tokenExpiresAt,
           isPrimary: index === 0,
@@ -122,7 +131,7 @@ async function persistConnectedInstagramAccounts(input: {
           uploadsPlaylistId: account.accountType,
           accessToken: input.accessToken,
           refreshToken: null,
-          scopes: input.permissions ?? null,
+          scopes: serializedPermissions ?? null,
           tokenType: input.tokenType ?? null,
           tokenExpiresAt,
           isPrimary: index === 0,
