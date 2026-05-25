@@ -10,6 +10,7 @@ import { brandRoutes } from './modules/brands/brand.routes.js';
 import { campaignRoutes } from './modules/campaigns/campaign.routes.js';
 import { applicationRoutes } from './modules/campaigns/application.routes.js';
 import { submissionRoutes } from './modules/campaigns/submission.routes.js';
+import { startSubmissionTrackingWorker } from './modules/campaigns/submission-tracking.worker.js';
 import { adminRoutes } from './modules/admin/admin.routes.js';
 import { kycRoutes } from './modules/creators/kyc/kyc.routes.js';
 import { payoutRoutes } from './modules/payouts/payout.routes.js';
@@ -45,6 +46,7 @@ app.register(analyticsRoutes, { prefix: '/' });
 const start = async () => {
   try {
     await app.listen({ port: PORT });
+    startSubmissionTrackingWorker(app.log);
     console.log(`Server running at http://localhost:${PORT}`);
   } catch (err) {
     app.log.error(err);

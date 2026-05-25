@@ -1,4 +1,6 @@
+import { Platform, SubmissionStatus } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
+import { buildSubmissionTrackingJobs } from './submission-tracking.service.js';
 
 export async function submitContent(
   userId: string,
@@ -15,8 +17,27 @@ export async function submitContent(
   if (!application) throw new Error('You must apply to this campaign before submitting');
   if (application.status !== 'ACCEPTED') throw new Error('Your application has not been accepted yet');
 
-  return prisma.contentSubmission.create({
-    data: { campaignId, creatorId: creatorProfile.id, platform, contentUrl },
+  return prisma.$transaction(async (tx) => {
+    const submission = await tx.contentSubmission.create({
+      data: {
+        campaignId,
+        creatorId: creatorProfile.id,
+        platform,
+        contentUrl,
+        status: SubmissionStatus.UNDER_REVIEW,
+      },
+    });
+
+    await (tx as any).submissionTrackingJob.createMany({
+      data: buildSubmissionTrackingJobs(submission.createdAt).map((job) => ({
+        submissionId: submission.id,
+        sequence: job.sequence,
+        checkpointLabel: job.checkpointLabel,
+        scheduledFor: job.scheduledFor,
+      })),
+    });
+
+    return submission;
   });
 }
 

@@ -1,4 +1,4 @@
-import { PaymentProvider, PaymentResult } from './payment.provider.js';
+import type { PaymentProvider, PaymentResult } from './payment.provider.js';
 
 export class RazorpayStub implements PaymentProvider {
   async sendPayout(

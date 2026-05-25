@@ -40,6 +40,13 @@ enum SubmissionStatus {
   PAID
 }
 
+enum TrackingJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 enum Platform {
   INSTAGRAM
   YOUTUBE
@@ -87,6 +94,7 @@ model CreatorProfile {
   submissions  ContentSubmission[]
   baselines    CreatorBaseline[]
   wallet       CreatorWallet?
+  earningsWallet EarningsWallet?
 }
 
 model ConnectedPlatformAccount {
@@ -110,7 +118,6 @@ model ConnectedPlatformAccount {
 
   @@unique([platform, providerAccountId])
   @@index([userId, platform])
-  wallet       EarningsWallet?
 }
 
 model BrandProfile {
@@ -171,10 +178,31 @@ model ContentSubmission {
   fraudScore    Float?
 
   metricSnapshots MetricSnapshot[]
+  trackingJobs     SubmissionTrackingJob[]
   balanceEntries  BalanceLedgerEntry[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model SubmissionTrackingJob {
+  id                 String            @id @default(uuid())
+  submissionId       String
+  submission         ContentSubmission @relation(fields: [submissionId], references: [id])
+  sequence           Int
+  checkpointLabel    String
+  scheduledFor       DateTime
+  status             TrackingJobStatus @default(PENDING)
+  attemptCount       Int               @default(0)
+  lastError          String?
+  processingStartedAt DateTime?
+  completedAt        DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@unique([submissionId, sequence])
+  @@index([status, scheduledFor])
+  @@index([submissionId, scheduledFor])
 }
 
 model CreatorBaseline {
