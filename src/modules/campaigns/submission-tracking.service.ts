@@ -1,8 +1,9 @@
 import { Platform, SubmissionStatus } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 
-const DEFAULT_DEV_TRACKING_SCHEDULE_OFFSETS_MINUTES = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120];
-const DEFAULT_PROD_TRACKING_SCHEDULE_OFFSETS_MINUTES = [0, 360, 720, 1440, 4320, 5760, 7200, 8640, 10080, 11520, 12960, 14400];
+const DEFAULT_TRACKING_SCHEDULE_OFFSETS_MINUTES = [0, 300, 600, 900, 1200, 1800, 2400, 3000, 3600, 4320, 5040, 5760, 6480, 7200];
+const ROLLING_TRACKING_EXTENSION_MINUTES = 720;
+const ROLLING_TRACKING_START_AFTER_MINUTES = DEFAULT_TRACKING_SCHEDULE_OFFSETS_MINUTES[DEFAULT_TRACKING_SCHEDULE_OFFSETS_MINUTES.length - 1] ?? 7200;
 const DEFAULT_MAX_DUE_JOBS = 10;
 const MAX_TRACKING_ATTEMPTS = 3;
 const INSTAGRAM_MEDIA_PAGE_LIMIT = 50;
@@ -24,7 +25,7 @@ type TrackingJobSeed = {
   scheduledFor: Date;
 };
 
-type SubmissionDecisionClassification = 'REVIEW' | 'VERIFIED';
+type SubmissionReviewSignalLevel = 'INSUFFICIENT_DATA' | 'LOOKS_ORGANIC' | 'WATCH' | 'SUSPICIOUS';
 
 type SubmissionMetrics = {
   viewCount: number;
@@ -115,9 +116,7 @@ function getTrackingScheduleOffsetsMinutes() {
     }
   }
 
-  return process.env.NODE_ENV === 'production'
-    ? DEFAULT_PROD_TRACKING_SCHEDULE_OFFSETS_MINUTES
-    : DEFAULT_DEV_TRACKING_SCHEDULE_OFFSETS_MINUTES;
+  return DEFAULT_TRACKING_SCHEDULE_OFFSETS_MINUTES;
 }
 
 function normalizeUrlForComparison(value: string) {
@@ -505,7 +504,7 @@ function buildTrackingSummary(snapshots: Array<{
   checkpointLabel: string;
   scheduledFor: Date;
   status: TrackingJobStatusValue;
-}>) {
+}>, analysisStoppedAt: Date | null = null) {
   const orderedSnapshots = [...snapshots].sort((a, b) => a.capturedAt.getTime() - b.capturedAt.getTime());
   const growthTimeline = buildGrowthTimeline(orderedSnapshots.map((snapshot) => ({
     capturedAt: snapshot.capturedAt,
@@ -515,7 +514,9 @@ function buildTrackingSummary(snapshots: Array<{
     .map((snapshot) => snapshot.engagementRatio)
     .filter((value): value is number => typeof value === 'number');
   const latestSnapshot = orderedSnapshots[orderedSnapshots.length - 1] ?? null;
-  const nextPendingJob = trackingJobs
+  const nextPendingJob = analysisStoppedAt
+    ? null
+    : trackingJobs
     .filter((job) => job.status === TrackingJobStatus.PENDING)
     .sort((a, b) => a.scheduledFor.getTime() - b.scheduledFor.getTime())[0] ?? null;
 
@@ -528,6 +529,8 @@ function buildTrackingSummary(snapshots: Array<{
         : Number((engagementRatios.reduce((sum, value) => sum + value, 0) / engagementRatios.length).toFixed(6)),
     growthPattern: classifyGrowthPattern(growthTimeline),
     growthTimeline,
+    analysisStoppedAt,
+    trackingState: analysisStoppedAt ? 'STOPPED' : 'ACTIVE',
     nextPendingCheckpoint: nextPendingJob
       ? {
           checkpointLabel: nextPendingJob.checkpointLabel,
@@ -647,7 +650,7 @@ function buildObservationIntervals(snapshots: Array<{
   return intervals;
 }
 
-function classifySubmissionDecision(input: {
+function analyzeSubmissionReviewSignals(input: {
   snapshots: Array<{
     capturedAt: Date;
     viewCount: number;
@@ -664,6 +667,7 @@ function classifySubmissionDecision(input: {
     avgViews: number;
     avgEngagementRate: number;
   } | null;
+  analysisStoppedAt: Date | null;
 }) {
   const orderedSnapshots = [...input.snapshots].sort((a, b) => a.capturedAt.getTime() - b.capturedAt.getTime());
   const initialSnapshot = orderedSnapshots[0] ?? null;
@@ -676,24 +680,28 @@ function classifySubmissionDecision(input: {
       engagementRatio: snapshot.engagementRatio,
     })),
     input.trackingJobs,
+    input.analysisStoppedAt,
   );
   const baselineComparison = buildBaselineComparison(input.baseline, latestSnapshot);
   const completedCheckpoints = input.trackingJobs.filter((job) => job.status === TrackingJobStatus.COMPLETED).length;
   const pendingCheckpoints = input.trackingJobs.filter((job) => job.status === TrackingJobStatus.PENDING).length;
   const failedCheckpoints = input.trackingJobs.filter((job) => job.status === TrackingJobStatus.FAILED).length;
   const totalCheckpoints = input.trackingJobs.length;
-  const collectionComplete = totalCheckpoints > 0 && pendingCheckpoints === 0 && failedCheckpoints === 0;
-  const reviewReasons = [] as string[];
-  const verificationReasons = [] as string[];
+  const concernReasons = [] as string[];
+  const positiveSignals = [] as string[];
 
   if (!initialSnapshot || !latestSnapshot) {
     return {
-      classification: 'REVIEW' as SubmissionDecisionClassification,
-      collectionComplete: false,
+      signalLevel: 'INSUFFICIENT_DATA' as SubmissionReviewSignalLevel,
+      analysisStopped: input.analysisStoppedAt !== null,
+      hasPendingCheckpoints: pendingCheckpoints > 0,
       riskScore: 100,
       confidenceScore: 0,
-      reasons: ['Not enough snapshots were collected to verify the video.'],
+      reasons: ['Not enough snapshots have been collected yet to generate a useful admin review signal.'],
+      positiveSignals,
+      concerns: concernReasons,
       completedCheckpoints,
+      pendingCheckpoints,
       totalCheckpoints,
       signals: {
         initialViews: initialSnapshot?.viewCount ?? null,
@@ -775,73 +783,73 @@ function classifySubmissionDecision(input: {
   const commentCoverageComplete = orderedSnapshots.every((snapshot) => snapshot.commentCount !== null);
   let riskScore = 0;
 
-  if (!collectionComplete) {
+  if (pendingCheckpoints > 0 && input.analysisStoppedAt === null) {
     riskScore += 18;
-    reviewReasons.push('The observation window is still in progress, so the system keeps this video in review until all scheduled checkpoints finish.');
+    concernReasons.push('More scheduled checkpoints are still pending, so the admin signal is based on a partial observation window.');
   }
 
   if (orderedSnapshots.length < 5) {
     riskScore += 24;
-    reviewReasons.push('Fewer than 5 snapshots were captured, so the system does not have enough evidence to verify the view pattern safely.');
+    concernReasons.push('Fewer than 5 snapshots were captured, so the signal is still based on limited evidence.');
   }
 
   if (observationWindowHours < 1) {
     riskScore += 18;
-    reviewReasons.push('The observed window is shorter than 1 hour, so the system keeps the video in review instead of verifying early.');
+    concernReasons.push('The observed window is shorter than 1 hour, so the current signal is still early and unstable.');
   }
 
   if (negativeViewIntervals.length > 0 || summary.growthPattern === 'ANOMALOUS') {
     riskScore += 45;
-    reviewReasons.push('Views dropped between checkpoints, which is inconsistent with a clean organic progression.');
+    concernReasons.push('Views dropped between checkpoints, which is inconsistent with a clean organic progression.');
   }
 
   if (negativeLikeIntervals.length > 0) {
     riskScore += 10;
-    reviewReasons.push('Like counts decreased materially between checkpoints, so the interaction trail is not clean enough to verify.');
+    concernReasons.push('Like counts decreased materially between checkpoints, so the interaction trail is less trustworthy.');
   }
 
   if (negativeCommentIntervals.length > 0) {
     riskScore += 8;
-    reviewReasons.push('Comment counts decreased materially between checkpoints, so the interaction trail is not clean enough to verify.');
+    concernReasons.push('Comment counts decreased materially between checkpoints, so the interaction trail is less trustworthy.');
   }
 
   if (totalGrowthViews <= 0) {
     riskScore += 35;
-    reviewReasons.push('The video did not gain views during the observed window.');
+    concernReasons.push('The video did not gain views during the observed window.');
   }
 
   if (!likeCoverageComplete && !commentCoverageComplete) {
     riskScore += 20;
-    reviewReasons.push('Interaction data is unavailable across the full window, so the system cannot safely verify the video.');
+    concernReasons.push('Interaction data is unavailable across the full window, so the admin signal cannot fully validate view support.');
   }
 
   if (latestEngagementRatio === null) {
     riskScore += 15;
-    reviewReasons.push('Latest engagement ratio is unavailable, so the system cannot rule out unsupported view growth.');
+    concernReasons.push('Latest engagement ratio is unavailable, so unsupported view growth cannot be ruled out.');
   } else if (latestEngagementRatio < 0.0004) {
     riskScore += 30;
-    reviewReasons.push('Engagement is extremely low relative to the current view count.');
+    concernReasons.push('Engagement is extremely low relative to the current view count.');
   } else if (latestEngagementRatio < 0.001 && latestSnapshot.viewCount >= 1000) {
     riskScore += 16;
-    reviewReasons.push('Engagement is weak relative to the current view count.');
+    concernReasons.push('Engagement is weak relative to the current view count.');
   }
 
   if (engagementTrendRatio !== null && engagementTrendRatio < 0.45 && totalGrowthViews >= 500) {
     riskScore += 18;
-    reviewReasons.push('Engagement density fell sharply as views accumulated across the observed window.');
+    concernReasons.push('Engagement density fell sharply as views accumulated across the observed window.');
   }
 
   if (lowInteractionIntervals.length >= 2) {
     riskScore += 35;
-    reviewReasons.push('Multiple growth intervals added significant views without matching interaction support.');
+    concernReasons.push('Multiple growth intervals added significant views without matching interaction support.');
   } else if (lowInteractionIntervals.length === 1) {
     riskScore += 20;
-    reviewReasons.push('One growth interval added significant views with unusually weak interaction support.');
+    concernReasons.push('One growth interval added significant views with unusually weak interaction support.');
   }
 
   if (dominantGrowthWithoutInteractionSupport) {
     riskScore += 20;
-    reviewReasons.push('A dominant share of total growth came from one interval without proportional interaction gains.');
+    concernReasons.push('A dominant share of total growth came from one interval without proportional interaction gains.');
   }
 
   if (
@@ -850,12 +858,12 @@ function classifySubmissionDecision(input: {
     && (lowInteractionIntervals.length > 0 || dominantGrowthWithoutInteractionSupport || (engagementTrendRatio !== null && engagementTrendRatio < 0.45))
   ) {
     riskScore += 12;
-    reviewReasons.push('Growth velocity varied sharply alongside weak interaction support.');
+    concernReasons.push('Growth velocity varied sharply alongside weak interaction support.');
   }
 
   if (velocityCv !== null && velocityCv >= 1.4 && lowInteractionIntervals.length > 0) {
     riskScore += 8;
-    reviewReasons.push('View velocity was highly unstable during intervals that already showed weak interaction support.');
+    concernReasons.push('View velocity was highly unstable during intervals that already showed weak interaction support.');
   }
 
   if (baselineComparison) {
@@ -864,78 +872,78 @@ function classifySubmissionDecision(input: {
     if (baselineViewRatio !== null && baselineEngagementRatio !== null) {
       if (baselineViewRatio >= 4 && baselineEngagementRatio < 0.45) {
         riskScore += 22;
-        reviewReasons.push('Views ran far above creator baseline while engagement quality lagged well behind baseline.');
+        concernReasons.push('Views ran far above creator baseline while engagement quality lagged well behind baseline.');
       } else if (baselineViewRatio >= 2.5 && baselineEngagementRatio < 0.35) {
         riskScore += 12;
-        reviewReasons.push('View growth outpaced creator baseline without comparable engagement quality.');
+        concernReasons.push('View growth outpaced creator baseline without comparable engagement quality.');
       }
 
       if (baselineEngagementRatio < 0.25) {
         riskScore += 15;
-        reviewReasons.push('Engagement quality is dramatically below the creator baseline.');
+        concernReasons.push('Engagement quality is dramatically below the creator baseline.');
       }
     }
   }
 
   if (failedCheckpoints > 0) {
     riskScore += 15;
-    reviewReasons.push('One or more scheduled tracking checkpoints failed, so the collected evidence is incomplete.');
+    concernReasons.push('One or more scheduled tracking checkpoints failed, so the collected evidence is incomplete.');
   }
 
   if (negativeViewIntervals.length === 0) {
-    verificationReasons.push('Views increased monotonically across the full observed window.');
+    positiveSignals.push('Views increased monotonically across the observed window.');
   }
 
   if (totalGrowthViews > 0 && positiveIntervals.length >= Math.max(3, Math.min(4, observationIntervals.length))) {
-    verificationReasons.push('The video kept gaining views across repeated checkpoints rather than through a single unsupported jump.');
+    positiveSignals.push('The video kept gaining views across repeated checkpoints rather than through a single unsupported jump.');
   }
 
   if (overallInteractionDensity !== null && overallInteractionDensity >= 0.003) {
-    verificationReasons.push('Interaction growth stayed healthy relative to added views throughout the observation window.');
+    positiveSignals.push('Interaction growth stayed healthy relative to added views throughout the observation window.');
   }
 
   if (engagementTrendRatio !== null && engagementTrendRatio >= 0.8) {
-    verificationReasons.push('Engagement ratio stayed stable or improved as the video accumulated more views.');
+    positiveSignals.push('Engagement ratio stayed stable or improved as the video accumulated more views.');
   }
 
   if (lowInteractionIntervals.length === 0 && !dominantGrowthWithoutInteractionSupport) {
-    verificationReasons.push('No large burst of views appeared without matching interaction support.');
+    positiveSignals.push('No large burst of views appeared without matching interaction support.');
   }
 
   if (baselineComparison && baselineEngagementRatio !== null && baselineEngagementRatio >= 0.75) {
-    verificationReasons.push('Engagement quality remained in line with the creator baseline.');
+    positiveSignals.push('Engagement quality remained in line with the creator baseline.');
   }
 
   riskScore = clamp(Number(riskScore.toFixed(2)), 0, 100);
   const confidenceScore = Number((100 - riskScore).toFixed(2));
+  const hasInsufficientData = orderedSnapshots.length < 3 || observationWindowHours < 5;
+  const signalLevel: SubmissionReviewSignalLevel = hasInsufficientData
+    ? 'INSUFFICIENT_DATA'
+    : riskScore >= 60
+      ? 'SUSPICIOUS'
+      : riskScore >= 30
+        ? 'WATCH'
+        : 'LOOKS_ORGANIC';
 
-  const hasVerificationBlocker = !collectionComplete
-    || orderedSnapshots.length < 5
-    || observationWindowHours < 1
-    || totalGrowthViews <= 0
-    || negativeViewIntervals.length > 0
-    || latestEngagementRatio === null
-    || (!likeCoverageComplete && !commentCoverageComplete)
-    || lowInteractionIntervals.length >= 2
-    || dominantGrowthWithoutInteractionSupport;
-
-  const classification: SubmissionDecisionClassification = !hasVerificationBlocker && riskScore <= 20 && verificationReasons.length >= 4
-    ? 'VERIFIED'
-    : 'REVIEW';
-  if (classification === 'REVIEW' && reviewReasons.length === 0) {
-    reviewReasons.push('The observed pattern is not explicitly suspicious, but the system does not yet have strong enough evidence to verify the views confidently.');
-  }
-  const reasons = classification === 'VERIFIED'
-    ? verificationReasons.slice(0, 5)
-    : reviewReasons;
+  const reasons = signalLevel === 'LOOKS_ORGANIC'
+    ? (positiveSignals.length > 0
+        ? positiveSignals.slice(0, 5)
+        : ['The observed pattern looks stable so far, but final payment still depends on admin verification.'])
+    : (concernReasons.length > 0
+        ? concernReasons
+        : ['More checkpoints are needed before the system can provide a confident admin signal.']);
 
   return {
-    classification,
-    collectionComplete,
+    signalLevel,
+    analysisStopped: input.analysisStoppedAt !== null,
+    hasPendingCheckpoints: pendingCheckpoints > 0,
     riskScore,
     confidenceScore,
     reasons,
+    positiveSignals: positiveSignals.slice(0, 5),
+    concerns: concernReasons,
     completedCheckpoints,
+    pendingCheckpoints,
     totalCheckpoints,
     signals: {
       initialViews: initialSnapshot.viewCount,
@@ -958,23 +966,59 @@ function classifySubmissionDecision(input: {
   };
 }
 
-function resolveSubmissionStatus(input: {
-  currentStatus: SubmissionStatus;
-  classification: SubmissionDecisionClassification;
-  collectionComplete: boolean;
-}) {
-  if (input.currentStatus === SubmissionStatus.PAID || input.currentStatus === SubmissionStatus.APPROVED) {
-    return input.currentStatus;
+async function ensureRollingTrackingJobForSubmission(submissionId: string) {
+  const submission = (await (prisma.contentSubmission as any).findUnique({
+    where: { id: submissionId },
+    select: {
+      id: true,
+      createdAt: true,
+      analysisStoppedAt: true,
+      trackingJobs: {
+        orderBy: [{ scheduledFor: 'asc' }, { sequence: 'asc' }],
+      },
+    },
+  })) as any;
+
+  if (!submission || submission.analysisStoppedAt) {
+    return null;
   }
 
-  if (input.classification === 'VERIFIED') {
-    return SubmissionStatus.VERIFIED;
+  const openJobs = submission.trackingJobs.filter((job: any) => (
+    job.status === TrackingJobStatus.PENDING
+    || job.status === TrackingJobStatus.PROCESSING
+    || (job.status === TrackingJobStatus.FAILED && job.attemptCount < MAX_TRACKING_ATTEMPTS)
+  ));
+  if (openJobs.length > 0) {
+    return null;
   }
 
-  return SubmissionStatus.UNDER_REVIEW;
+  const latestJob = submission.trackingJobs[submission.trackingJobs.length - 1] ?? null;
+  if (!latestJob) {
+    return null;
+  }
+
+  const latestOffsetMinutes = Math.round((latestJob.scheduledFor.getTime() - submission.createdAt.getTime()) / (1000 * 60));
+  if (latestOffsetMinutes < ROLLING_TRACKING_START_AFTER_MINUTES) {
+    return null;
+  }
+
+  const nextOffsetMinutes = latestOffsetMinutes + ROLLING_TRACKING_EXTENSION_MINUTES;
+
+  try {
+    return await trackingJobDelegate.create({
+      data: {
+        submissionId,
+        sequence: latestJob.sequence + 1,
+        checkpointLabel: formatCheckpointLabel(nextOffsetMinutes),
+        scheduledFor: new Date(submission.createdAt.getTime() + nextOffsetMinutes * 60 * 1000),
+      },
+    });
+  } catch {
+    return null;
+  }
 }
 
-async function refreshSubmissionDecision(submissionId: string) {
+async function refreshSubmissionReviewSignals(submissionId: string) {
   const submission = (await (prisma.contentSubmission as any).findUnique({
     where: { id: submissionId },
     include: {
@@ -1002,32 +1046,28 @@ async function refreshSubmissionDecision(submissionId: string) {
     },
   });
 
-  const verdict = classifySubmissionDecision({
+  const reviewSignals = analyzeSubmissionReviewSignals({
     snapshots: submission.metricSnapshots,
     trackingJobs: submission.trackingJobs,
     baseline,
+    analysisStoppedAt: submission.analysisStoppedAt,
   });
-
-  const latestSnapshot = submission.metricSnapshots[submission.metricSnapshots.length - 1] ?? null;
-  const nextStatus = resolveSubmissionStatus({
-    currentStatus: submission.status,
-    classification: verdict.classification,
-    collectionComplete: verdict.collectionComplete,
-  });
-  const nextVerifiedViews = verdict.classification === 'VERIFIED' && verdict.collectionComplete && latestSnapshot
-    ? latestSnapshot.viewCount
-    : null;
 
   await prisma.contentSubmission.update({
     where: { id: submissionId },
     data: {
-      status: nextStatus,
-      fraudScore: verdict.riskScore,
-      verifiedViews: nextVerifiedViews,
+      status:
+        submission.status === SubmissionStatus.APPROVED
+        || submission.status === SubmissionStatus.PAID
+        || submission.status === SubmissionStatus.REJECTED
+          ? submission.status
+          : SubmissionStatus.UNDER_REVIEW,
+      fraudScore: reviewSignals.riskScore,
+      verifiedViews: null,
     },
   });
 
-  return verdict;
+  return reviewSignals;
 }
 
 async function getCreatorProfileByUserId(userId: string) {
@@ -1147,6 +1187,9 @@ export function buildSubmissionTrackingJobs(createdAt: Date) {
 
 export async function trackSubmissionNow(userId: string, submissionId: string) {
   const submission = await getOwnedSubmission(userId, submissionId);
+  if (submission.analysisStoppedAt) {
+    throw new Error('Analysis has already been stopped for this submission');
+  }
   const snapshot = await captureSubmissionSnapshotRecord({
     submissionId: submission.id,
     creatorUserId: submission.creator.userId,
@@ -1155,13 +1198,30 @@ export async function trackSubmissionNow(userId: string, submissionId: string) {
   });
 
   await completeOldestDueTrackingJobForSubmission(submission.id, snapshot.capturedAt);
-  await refreshSubmissionDecision(submission.id);
+  await ensureRollingTrackingJobForSubmission(submission.id);
+  await refreshSubmissionReviewSignals(submission.id);
 
   const tracking = await getSubmissionTracking(userId, submissionId);
   return {
     snapshot,
     tracking,
   };
+}
+
+export async function stopSubmissionAnalysis(userId: string, submissionId: string) {
+  const submission = await getOwnedSubmission(userId, submissionId);
+  if (!submission.analysisStoppedAt) {
+    await (prisma.contentSubmission as any).update({
+      where: { id: submission.id },
+      data: {
+        analysisStoppedAt: new Date(),
+        status: SubmissionStatus.UNDER_REVIEW,
+      },
+    });
+  }
+
+  await refreshSubmissionReviewSignals(submission.id);
+  return getSubmissionTracking(userId, submissionId);
 }
 
 export async function processDueTrackingJobs(input: {
@@ -1174,15 +1234,16 @@ export async function processDueTrackingJobs(input: {
 
   const jobs = await trackingJobDelegate.findMany({
     where: {
-      ...(input.userId
-        ? {
-            submission: {
+      submission: {
+        analysisStoppedAt: null,
+        ...(input.userId
+          ? {
               creator: {
                 userId: input.userId,
               },
-            },
-          }
-        : {}),
+            }
+          : {}),
+      },
       scheduledFor: {
         lte: new Date(),
       },
@@ -1270,7 +1331,8 @@ export async function processDueTrackingJobs(input: {
         snapshotId: snapshot.id,
       });
 
-      await refreshSubmissionDecision(job.submissionId);
+      await ensureRollingTrackingJobForSubmission(job.submissionId);
+      await refreshSubmissionReviewSignals(job.submissionId);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Tracking failed';
       await trackingJobDelegate.update({
@@ -1300,6 +1362,53 @@ export async function processDueTrackingJobs(input: {
   };
 }
 
+function buildSubmissionTrackingPayload(input: {
+  submission: any;
+  reviewSignals: any;
+}) {
+  const { submission, reviewSignals } = input;
+
+  return {
+    submission: {
+      id: submission.id,
+      campaignId: submission.campaignId,
+      campaignTitle: submission.campaign.title,
+      platform: submission.platform,
+      contentUrl: submission.contentUrl,
+      status: submission.status,
+      verifiedViews: submission.verifiedViews,
+      lastCheckedAt: submission.lastCheckedAt,
+      analysisStoppedAt: submission.analysisStoppedAt,
+      fraudScore: submission.fraudScore,
+      createdAt: submission.createdAt,
+      creator: submission.creator
+        ? {
+            id: submission.creator.id,
+            displayName: submission.creator.displayName,
+            userId: submission.creator.userId,
+          }
+        : null,
+      campaign: {
+        id: submission.campaign.id,
+        title: submission.campaign.title,
+        cpvRate: submission.campaign.cpvRate,
+        minimumPayoutViews: submission.campaign.minimumPayoutViews,
+        maxPayoutPerSubmission: submission.campaign.maxPayoutPerSubmission,
+        startDate: submission.campaign.startDate,
+        endDate: submission.campaign.endDate,
+      },
+      estimatedCurrentValue:
+        submission.metricSnapshots.length === 0
+          ? 0
+          : Number((submission.metricSnapshots[submission.metricSnapshots.length - 1].viewCount * Number(submission.campaign.cpvRate)).toFixed(2)),
+    },
+    reviewSignals,
+    trackingJobs: submission.trackingJobs,
+    snapshots: submission.metricSnapshots,
+    summary: buildTrackingSummary(submission.metricSnapshots, submission.trackingJobs, submission.analysisStoppedAt),
+  };
+}
+
 export async function getSubmissionTracking(userId: string, submissionId: string) {
   const creatorProfile = await getCreatorProfileByUserId(userId);
   const submission = (await (prisma.contentSubmission as any).findFirst({
@@ -1310,8 +1419,20 @@ export async function getSubmissionTracking(userId: string, submissionId: string
     include: {
       campaign: {
         select: {
+          id: true,
           title: true,
           cpvRate: true,
+          minimumPayoutViews: true,
+          maxPayoutPerSubmission: true,
+          startDate: true,
+          endDate: true,
+        },
+      },
+      creator: {
+        select: {
+          id: true,
+          displayName: true,
+          userId: true,
         },
       },
       metricSnapshots: {
@@ -1338,32 +1459,68 @@ export async function getSubmissionTracking(userId: string, submissionId: string
     },
   });
 
-  const verdict = classifySubmissionDecision({
+  const reviewSignals = analyzeSubmissionReviewSignals({
     snapshots: submission.metricSnapshots,
     trackingJobs: submission.trackingJobs,
     baseline,
+    analysisStoppedAt: submission.analysisStoppedAt,
   });
 
-  return {
-    submission: {
-      id: submission.id,
-      campaignId: submission.campaignId,
-      campaignTitle: submission.campaign.title,
-      platform: submission.platform,
-      contentUrl: submission.contentUrl,
-      status: submission.status,
-      verifiedViews: submission.verifiedViews,
-      lastCheckedAt: submission.lastCheckedAt,
-      fraudScore: submission.fraudScore,
-      createdAt: submission.createdAt,
-      estimatedCurrentValue:
-        submission.metricSnapshots.length === 0
-          ? 0
-          : Number((submission.metricSnapshots[submission.metricSnapshots.length - 1].viewCount * Number(submission.campaign.cpvRate)).toFixed(2)),
+  return buildSubmissionTrackingPayload({ submission, reviewSignals });
+}
+
+export async function getSubmissionTrackingForAdmin(submissionId: string) {
+  const submission = (await (prisma.contentSubmission as any).findUnique({
+    where: { id: submissionId },
+    include: {
+      campaign: {
+        select: {
+          id: true,
+          title: true,
+          cpvRate: true,
+          minimumPayoutViews: true,
+          maxPayoutPerSubmission: true,
+          startDate: true,
+          endDate: true,
+        },
+      },
+      creator: {
+        select: {
+          id: true,
+          displayName: true,
+          userId: true,
+        },
+      },
+      metricSnapshots: {
+        orderBy: {
+          capturedAt: 'asc',
+        },
+      },
+      trackingJobs: {
+        orderBy: [{ scheduledFor: 'asc' }, { sequence: 'asc' }],
+      },
     },
-    verdict,
-    trackingJobs: submission.trackingJobs,
+  })) as any;
+
+  if (!submission) {
+    throw new Error('Submission not found');
+  }
+
+  const baseline = await prisma.creatorBaseline.findUnique({
+    where: {
+      creatorId_platform: {
+        creatorId: submission.creatorId,
+        platform: submission.platform,
+      },
+    },
+  });
+
+  const reviewSignals = analyzeSubmissionReviewSignals({
     snapshots: submission.metricSnapshots,
-    summary: buildTrackingSummary(submission.metricSnapshots, submission.trackingJobs),
-  };
+    trackingJobs: submission.trackingJobs,
+    baseline,
+    analysisStoppedAt: submission.analysisStoppedAt,
+  });
+
+  return buildSubmissionTrackingPayload({ submission, reviewSignals });
 }

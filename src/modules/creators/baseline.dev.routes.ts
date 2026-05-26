@@ -4,7 +4,7 @@ import { Platform } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 import { authenticate } from '../../middleware/auth.js';
 import { getMySubmissions, submitContent } from '../campaigns/submission.service.js';
-import { getSubmissionTracking, processDueTrackingJobs, trackSubmissionNow } from '../campaigns/submission-tracking.service.js';
+import { getSubmissionTracking, processDueTrackingJobs, stopSubmissionAnalysis, trackSubmissionNow } from '../campaigns/submission-tracking.service.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'changeme';
 const DEV_CREATOR_EMAIL = 'dev-creator@benchmrk.local';
@@ -101,26 +101,41 @@ async function ensureDevCampaignForCreator(userId: string) {
   });
 
   const now = new Date();
-  const campaign = await prisma.campaign.findFirst({
+  const devCampaignStartDate = new Date(now.getTime() - 1000 * 60 * 60 * 24 * 16);
+  const devCampaignEndDate = new Date(now.getTime() + 1000 * 60 * 60 * 24 * 30);
+  const existingCampaign = await prisma.campaign.findFirst({
     where: {
       brandId: brandProfile.id,
       title: DEV_CAMPAIGN_TITLE,
       status: 'LIVE',
     },
     orderBy: { createdAt: 'desc' },
-  }) ?? await prisma.campaign.create({
-    data: {
-      brandId: brandProfile.id,
-      title: DEV_CAMPAIGN_TITLE,
-      description: 'Hidden dev campaign for YouTube submission analysis',
-      guidelines: 'Submit a live YouTube URL to create snapshots and compare against baseline.',
-      cpvRate: 0.5,
-      totalBudget: 5000,
-      status: 'LIVE',
-      startDate: now,
-      endDate: new Date(now.getTime() + 1000 * 60 * 60 * 24 * 30),
-    },
   });
+  const campaign = existingCampaign
+    ? await (prisma.campaign as any).update({
+        where: { id: existingCampaign.id },
+        data: {
+          minimumPayoutViews: 100,
+          maxPayoutPerSubmission: 250,
+          startDate: devCampaignStartDate,
+          endDate: devCampaignEndDate,
+        },
+      })
+    : await (prisma.campaign as any).create({
+        data: {
+          brandId: brandProfile.id,
+          title: DEV_CAMPAIGN_TITLE,
+          description: 'Hidden dev campaign for YouTube submission analysis',
+          guidelines: 'Submit a live YouTube URL to create snapshots and compare against baseline.',
+          cpvRate: 0.5,
+          totalBudget: 5000,
+          minimumPayoutViews: 100,
+          maxPayoutPerSubmission: 250,
+          status: 'LIVE',
+          startDate: devCampaignStartDate,
+          endDate: devCampaignEndDate,
+        },
+      });
 
   await prisma.application.upsert({
     where: {
@@ -232,7 +247,7 @@ const page = String.raw`<!doctype html>
         <p>2. Rebuild a YouTube baseline if you want trust score comparison.</p>
         <p>3. Paste a real YouTube URL under Submit Link For Analysis.</p>
         <p>4. Click Submit Link For Analysis.</p>
-        <p>5. Click Track Submission Now Again or Run Due Checks later to build snapshot history.</p>
+        <p>5. Click Track Submission Now Again later to build snapshot history.</p>
         <div class="status" id="boot-status">Booting dev session...</div>
       </section>
 
@@ -289,7 +304,7 @@ const page = String.raw`<!doctype html>
           <input id="submission-id" placeholder="auto-filled after submit" />
           <button id="youtube-fetch-btn">Fetch Submission Analysis</button>
           <button id="youtube-track-now-btn">Track Submission Now Again</button>
-          <button id="youtube-run-due-btn">Run Due Checks</button>
+          <button id="youtube-stop-btn">Stop Video Analysis</button>
         </section>
       </div>
 
@@ -328,7 +343,7 @@ const page = String.raw`<!doctype html>
         const tracking = analysis?.tracking;
         const submission = tracking?.submission;
         const summaryData = tracking?.summary;
-        const verdict = tracking?.verdict;
+        const reviewSignals = tracking?.reviewSignals;
         const baseline = analysis?.baseline;
         const baselineComparison = analysis?.baselineComparison;
         const snapshots = tracking?.snapshots || [];
@@ -347,6 +362,7 @@ const page = String.raw`<!doctype html>
           'Status: ' + (submission.status || '—'),
           'Created At: ' + formatDate(submission.createdAt),
           'Last Checked At: ' + formatDate(submission.lastCheckedAt),
+          'Analysis Stopped At: ' + formatDate(submission.analysisStoppedAt),
           '',
           'LATEST SNAPSHOT',
           'Views: ' + formatNumber(latestSnapshot?.viewCount),
@@ -355,14 +371,16 @@ const page = String.raw`<!doctype html>
           'Engagement Ratio: ' + formatDecimal(latestSnapshot?.engagementRatio, 6),
           'Snapshots Captured: ' + formatNumber(summaryData.totalSnapshots),
           'Growth Pattern: ' + (summaryData.growthPattern || '—'),
+          'Tracking State: ' + (summaryData?.trackingState || '—'),
           'Estimated Current Value: ' + formatNumber(submission.estimatedCurrentValue),
           '',
-          'VIDEO VERDICT',
-          'Classification: ' + (verdict?.classification || '—'),
-          'Collection Complete: ' + (verdict?.collectionComplete ? 'YES' : 'NO'),
-          'Risk Score: ' + formatNumber(verdict?.riskScore),
-          'Confidence Score: ' + formatNumber(verdict?.confidenceScore),
-          'Completed Checkpoints: ' + formatNumber(verdict?.completedCheckpoints) + ' / ' + formatNumber(verdict?.totalCheckpoints),
+          'ADMIN REVIEW SIGNAL',
+          'Signal Level: ' + (reviewSignals?.signalLevel || '—'),
+          'Analysis Stopped: ' + (reviewSignals?.analysisStopped ? 'YES' : 'NO'),
+          'Has Pending Checkpoints: ' + (reviewSignals?.hasPendingCheckpoints ? 'YES' : 'NO'),
+          'Risk Score: ' + formatNumber(reviewSignals?.riskScore),
+          'Confidence Score: ' + formatNumber(reviewSignals?.confidenceScore),
+          'Completed Checkpoints: ' + formatNumber(reviewSignals?.completedCheckpoints) + ' / ' + formatNumber(reviewSignals?.totalCheckpoints),
           '',
           'BASELINE COMPARISON',
           'Trust Score: ' + formatNumber(baseline?.trustScore),
@@ -398,9 +416,23 @@ const page = String.raw`<!doctype html>
           });
         }
 
-        if (Array.isArray(verdict?.reasons) && verdict.reasons.length > 0) {
-          lines.push('', 'VERDICT REASONS');
-          verdict.reasons.forEach((reason, index) => {
+        if (Array.isArray(reviewSignals?.reasons) && reviewSignals.reasons.length > 0) {
+          lines.push('', 'ADMIN REVIEW NOTES');
+          reviewSignals.reasons.forEach((reason, index) => {
+            lines.push((index + 1) + '. ' + reason);
+          });
+        }
+
+        if (Array.isArray(reviewSignals?.positiveSignals) && reviewSignals.positiveSignals.length > 0) {
+          lines.push('', 'POSITIVE SIGNALS');
+          reviewSignals.positiveSignals.forEach((reason, index) => {
+            lines.push((index + 1) + '. ' + reason);
+          });
+        }
+
+        if (Array.isArray(reviewSignals?.concerns) && reviewSignals.concerns.length > 0) {
+          lines.push('', 'CONCERNS');
+          reviewSignals.concerns.forEach((reason, index) => {
             lines.push((index + 1) + '. ' + reason);
           });
         }
@@ -653,8 +685,9 @@ const page = String.raw`<!doctype html>
         });
       };
 
-      document.getElementById('youtube-run-due-btn').onclick = async () => {
-        await api('/dev/phase2/youtube/run-due', {
+      document.getElementById('youtube-stop-btn').onclick = async () => {
+        const submissionId = submissionIdInput.value.trim();
+        await api('/dev/phase2/youtube/submissions/' + encodeURIComponent(submissionId) + '/stop-analysis', {
           method: 'POST',
           body: JSON.stringify({}),
         });
@@ -748,6 +781,18 @@ export async function baselineDevRoutes(app: FastifyInstance) {
       await trackSubmissionNow(request.user.userId, submissionId);
       const analysis = await buildYouTubeAnalysis(request.user.userId, submissionId);
       return reply.send({ ok: true, submissionId, analysis });
+    } catch (err: any) {
+      return reply.code(400).send({ error: err.message });
+    }
+  });
+
+  app.post('/dev/phase2/youtube/submissions/:submissionId/stop-analysis', { preHandler: authenticate }, async (request: any, reply) => {
+    const { submissionId } = request.params as { submissionId: string };
+
+    try {
+      const tracking = await stopSubmissionAnalysis(request.user.userId, submissionId);
+      const analysis = await buildYouTubeAnalysis(request.user.userId, submissionId);
+      return reply.send({ ok: true, submissionId, tracking, analysis });
     } catch (err: any) {
       return reply.code(400).send({ error: err.message });
     }

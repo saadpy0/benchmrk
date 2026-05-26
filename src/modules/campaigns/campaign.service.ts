@@ -10,6 +10,8 @@ export async function createCampaign(
     guidelines: string;
     cpvRate: number;
     totalBudget: number;
+    minimumPayoutViews?: number;
+    maxPayoutPerSubmission?: number;
     startDate: string;
     endDate: string;
   }
@@ -17,7 +19,7 @@ export async function createCampaign(
   const brandProfile = await prisma.brandProfile.findUnique({ where: { userId: brandId } });
   if (!brandProfile) throw new Error('Brand profile not found — complete your profile first');
 
-  return prisma.campaign.create({
+  return (prisma.campaign as any).create({
     data: {
       brandId: brandProfile.id,
       title: data.title,
@@ -25,6 +27,8 @@ export async function createCampaign(
       guidelines: data.guidelines,
       cpvRate: data.cpvRate,
       totalBudget: data.totalBudget,
+      minimumPayoutViews: data.minimumPayoutViews ?? 1000,
+      maxPayoutPerSubmission: data.maxPayoutPerSubmission ?? 0,
       startDate: new Date(data.startDate),
       endDate: new Date(data.endDate),
       status: 'DRAFT',

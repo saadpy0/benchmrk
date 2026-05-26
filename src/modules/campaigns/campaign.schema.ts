@@ -8,6 +8,8 @@ export const createCampaignSchema = {
         guidelines:  { type: 'string' },
         cpvRate:     { type: 'number' },
         totalBudget: { type: 'number' },
+        minimumPayoutViews: { type: 'number', minimum: 0 },
+        maxPayoutPerSubmission: { type: 'number', minimum: 0 },
         startDate:   { type: 'string' },
         endDate:     { type: 'string' },
       },
