@@ -1,6 +1,6 @@
 import { Platform } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
-import { rebuildCreatorBaseline } from './baseline.service.js';
+import { rebuildCreatorBaseline, recalculateReputationScore } from './baseline.service.js';
 
 type InstagramMediaResponse = {
   data?: Array<{
@@ -151,6 +151,16 @@ export async function rebuildInstagramBaselineFromConnectedAccount(input: {
     })),
   });
 
+  await prisma.connectedPlatformAccount.update({
+    where: { id: connectedAccount.id },
+    data: {
+      trustScore: result.trustScore,
+      baselineAvgViews: result.baseline.avgViews,
+      baselineEngagement: result.baseline.avgEngagementRate,
+      baselineFollowerCount: result.baseline.followerCount ?? null,
+    },
+  });
+
   return {
     ...result,
     source: {
@@ -164,4 +174,60 @@ export async function rebuildInstagramBaselineFromConnectedAccount(input: {
       mediaFetched: posts.length,
     },
   };
+}
+
+export async function rebuildInstagramAccountTrustScore(input: {
+  userId: string;
+  accountId: string;
+}) {
+  const connectedAccount = await prisma.connectedPlatformAccount.findFirst({
+    where: { id: input.accountId, userId: input.userId, platform: Platform.INSTAGRAM },
+  });
+
+  if (!connectedAccount) throw new Error('Connected Instagram account not found');
+  if (!connectedAccount.accessToken) throw new Error('Connected Instagram account token is missing');
+
+  const maxResults = 10;
+  const mediaResponse = await instagramGet<InstagramMediaResponse>('/me/media', {
+    fields: 'id,media_type,timestamp,like_count,comments_count,media_product_type',
+    limit: String(maxResults),
+    access_token: connectedAccount.accessToken,
+  });
+
+  const media = mediaResponse.data ?? [];
+
+  const posts = await Promise.all(
+    media.map(async (item) => {
+      const insightViews = await fetchMediaViewLikeMetric(connectedAccount.accessToken as string, item.id);
+      const likes = normalizeNonNegativeInt(item.like_count);
+      const comments = normalizeNonNegativeInt(item.comments_count);
+      const views = insightViews > 0 ? insightViews : Math.max(likes + comments, 1);
+      return { views, likes, comments, timestamp: item.timestamp ?? null };
+    }),
+  );
+
+  const accountAgeDays = resolveInstagramAccountAgeDays(posts.map((post) => post.timestamp));
+  const followerCount = connectedAccount.subscriberCount ?? undefined;
+
+  const result = await rebuildCreatorBaseline({
+    userId: input.userId,
+    platform: Platform.INSTAGRAM,
+    accountAgeDays,
+    ...(followerCount !== undefined ? { followerCount } : {}),
+    posts: posts.map((post) => ({ views: post.views, likes: post.likes, comments: post.comments })),
+  });
+
+  await prisma.connectedPlatformAccount.update({
+    where: { id: connectedAccount.id },
+    data: {
+      trustScore: result.trustScore,
+      baselineAvgViews: result.baseline.avgViews,
+      baselineEngagement: result.baseline.avgEngagementRate,
+      baselineFollowerCount: result.baseline.followerCount ?? null,
+    },
+  });
+
+  await recalculateReputationScore(input.userId);
+
+  return { ...result, accountId: connectedAccount.id };
 }

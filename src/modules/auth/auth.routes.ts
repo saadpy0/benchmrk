@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { authenticate } from '../../middleware/auth.js';
-import { signup, login } from './auth.service.js';
+import { signup, login, googleAuth } from './auth.service.js';
 import { buildYouTubeOAuthUrl, completeYouTubeOAuth } from './youtube-oauth.service.js';
 import { signupSchema, loginSchema } from './auth.schema.js';
 
@@ -29,6 +29,19 @@ export async function authRoutes(app: FastifyInstance) {
 
     try {
       const result = await login(email, password);
+      return reply.send(result);
+    } catch (err: any) {
+      return reply.code(401).send({ error: err.message });
+    }
+  });
+
+  app.post('/auth/google', async (request, reply) => {
+    const { accessToken, role } = request.body as {
+      accessToken: string;
+      role: 'CREATOR' | 'BRAND';
+    };
+    try {
+      const result = await googleAuth(accessToken, role);
       return reply.send(result);
     } catch (err: any) {
       return reply.code(401).send({ error: err.message });

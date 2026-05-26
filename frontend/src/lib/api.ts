@@ -21,6 +21,9 @@ export const signup = (email: string, password: string, role: 'CREATOR' | 'BRAND
 export const login = (email: string, password: string) =>
   api.post('/auth/login', { email, password });
 
+export const googleLogin = (accessToken: string, role: 'CREATOR' | 'BRAND') =>
+  api.post('/auth/google', { accessToken, role });
+
 // campaigns
 export const getDiscoverCampaigns = () => api.get('/discover');
 export const getCampaigns = (status?: string) => api.get('/campaigns', { params: { status } });
@@ -51,5 +54,24 @@ export const requestPayout = (amount: number, upiId: string) =>
 // analytics
 export const getCreatorAnalytics = () => api.get('/analytics/creator');
 export const getBrandAnalytics = () => api.get('/analytics/brand');
+
+// social OAuth
+export const getInstagramOAuthUrl = () => api.get('/auth/instagram/start');
+export const getYouTubeOAuthUrl = () => api.get('/auth/youtube/start');
+
+// connected accounts
+export const getConnectedAccounts = () => api.get('/creators/connected-accounts');
+export const disconnectAccount = (accountId: string) => api.delete(`/creators/connected-accounts/${accountId}`);
+export const rebuildAccountTrustScore = (accountId: string) => api.post(`/creators/connected-accounts/${accountId}/rebuild`, {});
+
+// baselines
+export const getCreatorBaseline = (platform: 'INSTAGRAM' | 'YOUTUBE') =>
+  api.get('/creators/baseline', { params: { platform } });
+export const rebuildInstagramConnectedBaseline = () =>
+  api.post('/creators/baseline/rebuild/instagram-connected', {});
+export const rebuildYouTubeConnectedBaseline = () =>
+  api.post('/creators/baseline/rebuild/youtube-connected', {});
+export const rebuildYouTubeLiveBaseline = (channelInput: string) =>
+  api.post('/creators/baseline/rebuild/youtube-live', { channelInput });
 
 export default api;

@@ -1,8 +1,11 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { authRoutes } from './modules/auth/auth.routes.js';
+import { instagramOAuthRoutes } from './modules/auth/instagram-oauth.routes.js';
+import { youtubeOAuthRoutes } from './modules/auth/youtube-oauth.routes.js';
 import { authenticate } from './middleware/authenticate.js';
 import { creatorRoutes } from './modules/creators/creator.routes.js';
+import { baselineRoutes } from './modules/creators/baseline.routes.js';
 import { brandRoutes } from './modules/brands/brand.routes.js';
 import { campaignRoutes } from './modules/campaigns/campaign.routes.js';
 import { applicationRoutes } from './modules/campaigns/application.routes.js';
@@ -21,6 +24,7 @@ const start = async () => {
     await app.register(cors, {
       origin: 'http://localhost:3001',
       credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     });
 
     app.get('/health', async () => {
@@ -32,7 +36,10 @@ const start = async () => {
     });
 
     app.register(authRoutes);
+    app.register(instagramOAuthRoutes);
+    app.register(youtubeOAuthRoutes);
     app.register(creatorRoutes, { prefix: '/' });
+    app.register(baselineRoutes, { prefix: '/' });
     app.register(brandRoutes, { prefix: '/' });
     app.register(campaignRoutes, { prefix: '/' });
     app.register(applicationRoutes, { prefix: '/' });

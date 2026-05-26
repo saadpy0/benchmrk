@@ -139,6 +139,28 @@ function calculateTrustScore({
   };
 }
 
+export async function recalculateReputationScore(userId: string) {
+  const accounts = await prisma.connectedPlatformAccount.findMany({
+    where: { userId, trustScore: { not: null } },
+    select: { trustScore: true },
+  });
+
+  if (accounts.length === 0) return null;
+
+  const avg = accounts.reduce((sum, a) => sum + (a.trustScore ?? 0), 0) / accounts.length;
+  const rounded = Math.round(avg * 100) / 100;
+
+  const creatorProfile = await prisma.creatorProfile.findUnique({ where: { userId } });
+  if (!creatorProfile) return null;
+
+  await prisma.creatorProfile.update({
+    where: { id: creatorProfile.id },
+    data: { reputationScore: rounded },
+  });
+
+  return rounded;
+}
+
 export async function rebuildCreatorBaseline(input: RebuildCreatorBaselineInput) {
   const creatorProfile = await prisma.creatorProfile.findUnique({ where: { userId: input.userId } });
   if (!creatorProfile) throw new Error('Creator profile not found');
@@ -189,10 +211,8 @@ export async function rebuildCreatorBaseline(input: RebuildCreatorBaselineInput)
     },
   });
 
-  await prisma.creatorProfile.update({
-    where: { id: creatorProfile.id },
-    data: { reputationScore: trustResult.trustScore },
-  });
+  // After updating a connected account's trust score, recalculate the average
+  await recalculateReputationScore(input.userId);
 
   return {
     baseline,

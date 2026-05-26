@@ -83,10 +83,11 @@ model CreatorProfile {
   reputationScore Float     @default(0)
   createdAt       DateTime  @default(now())
 
-  applications Application[]
-  submissions  ContentSubmission[]
-  baselines    CreatorBaseline[]
-  wallet       CreatorWallet?
+  applications   Application[]
+  submissions    ContentSubmission[]
+  baselines      CreatorBaseline[]
+  wallet         CreatorWallet?
+  earningsWallet EarningsWallet?
 }
 
 model ConnectedPlatformAccount {
@@ -105,12 +106,15 @@ model ConnectedPlatformAccount {
   tokenType         String?
   tokenExpiresAt    DateTime?
   isPrimary         Boolean  @default(false)
+  trustScore        Float?
+  baselineAvgViews      Float?
+  baselineEngagement    Float?
+  baselineFollowerCount Int?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
   @@unique([platform, providerAccountId])
   @@index([userId, platform])
-  wallet       EarningsWallet?
 }
 
 model BrandProfile {

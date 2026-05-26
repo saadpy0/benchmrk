@@ -1,6 +1,6 @@
 import { Platform } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
-import { rebuildCreatorBaseline } from './baseline.service.js';
+import { rebuildCreatorBaseline, recalculateReputationScore } from './baseline.service.js';
 
 type YouTubeChannelResponse = {
   items?: Array<{
@@ -244,10 +244,53 @@ export async function rebuildYoutubeBaselineFromConnectedAccount(input: {
     throw new Error('No connected YouTube account found');
   }
 
-  return buildYoutubeBaselineFromResolvedChannel({
+  const result = await buildYoutubeBaselineFromResolvedChannel({
     userId: input.userId,
     channelId: connectedAccount.providerAccountId,
     ...(input.maxResults !== undefined ? { maxResults: input.maxResults } : {}),
     sourceType: 'CONNECTED_ACCOUNT',
   });
+
+  await prisma.connectedPlatformAccount.update({
+    where: { id: connectedAccount.id },
+    data: {
+      trustScore: result.trustScore,
+      baselineAvgViews: result.baseline.avgViews,
+      baselineEngagement: result.baseline.avgEngagementRate,
+      baselineFollowerCount: result.baseline.followerCount ?? null,
+    },
+  });
+
+  return result;
+}
+
+export async function rebuildYoutubeAccountTrustScore(input: {
+  userId: string;
+  accountId: string;
+}) {
+  const connectedAccount = await prisma.connectedPlatformAccount.findFirst({
+    where: { id: input.accountId, userId: input.userId, platform: Platform.YOUTUBE },
+  });
+
+  if (!connectedAccount) throw new Error('Connected YouTube account not found');
+
+  const result = await buildYoutubeBaselineFromResolvedChannel({
+    userId: input.userId,
+    channelId: connectedAccount.providerAccountId,
+    sourceType: 'CONNECTED_ACCOUNT',
+  });
+
+  await prisma.connectedPlatformAccount.update({
+    where: { id: connectedAccount.id },
+    data: {
+      trustScore: result.trustScore,
+      baselineAvgViews: result.baseline.avgViews,
+      baselineEngagement: result.baseline.avgEngagementRate,
+      baselineFollowerCount: result.baseline.followerCount ?? null,
+    },
+  });
+
+  await recalculateReputationScore(input.userId);
+
+  return { ...result, accountId: connectedAccount.id };
 }
