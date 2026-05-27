@@ -16,193 +16,368 @@ const page = String.raw`<!doctype html>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Benchmrk Creator Portal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                50: '#f0f5ff',
+                100: '#e0ebff',
+                500: '#3b82f6',
+                600: '#2563eb',
+                900: '#1e3a8a',
+              },
+              dark: {
+                950: '#030712',
+                900: '#0b0f19',
+                800: '#111827',
+                700: '#1f2937',
+                600: '#374151',
+              }
+            },
+            fontFamily: {
+              sans: ['Inter', 'system-ui', 'sans-serif'],
+            }
+          }
+        }
+      }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
-      body { margin: 0; font-family: Inter, Arial, sans-serif; background: #020617; color: #e2e8f0; }
-      .wrap { max-width: 1200px; margin: 0 auto; padding: 32px 20px 48px; }
-      h1, h2, h3 { margin: 0; }
-      p { color: #94a3b8; }
-      .hero { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 24px; }
-      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
-      .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 20px 0; }
-      .card { background: linear-gradient(180deg, rgba(15,23,42,0.92), rgba(15,23,42,0.78)); border: 1px solid #1e293b; border-radius: 18px; padding: 18px; box-shadow: 0 12px 30px rgba(0,0,0,0.25); }
-      .muted { color: #94a3b8; }
-      .tiny { font-size: 12px; color: #94a3b8; }
-      .value { font-size: 28px; font-weight: 700; margin-top: 8px; }
-      label { display: block; margin: 10px 0 6px; font-size: 14px; color: #cbd5e1; }
-      input, textarea, select, button { width: 100%; box-sizing: border-box; border-radius: 12px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; padding: 11px 12px; font: inherit; }
-      textarea { min-height: 84px; resize: vertical; }
-      button { border: none; background: linear-gradient(90deg, #2563eb, #7c3aed); font-weight: 700; cursor: pointer; }
-      button.secondary { background: #1e293b; }
-      button.ghost { background: transparent; border: 1px solid #334155; }
-      .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-      .auth-shell { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
-      .hidden { display: none !important; }
-      .toolbar { display: flex; gap: 10px; flex-wrap: wrap; }
-      .toolbar button { width: auto; padding: 10px 14px; }
-      .list { display: grid; gap: 12px; margin-top: 14px; }
-      .campaign-item, .submission-item { border: 1px solid #1e293b; border-radius: 16px; padding: 14px; background: rgba(15, 23, 42, 0.72); }
-      .history-item { border: 1px solid #1e293b; border-radius: 16px; padding: 14px; background: rgba(15, 23, 42, 0.72); }
-      .campaign-meta, .submission-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 12px; }
-      .history-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 12px; }
-      .meta-block { background: rgba(2, 6, 23, 0.55); border: 1px solid #1e293b; border-radius: 12px; padding: 10px; }
-      .meta-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #94a3b8; }
-      .meta-value { margin-top: 5px; font-weight: 600; }
-      .status { padding: 6px 10px; border-radius: 999px; background: rgba(37, 99, 235, 0.16); color: #bfdbfe; font-size: 12px; font-weight: 700; display: inline-flex; width: fit-content; }
-      .success { color: #86efac; }
-      .error { color: #fca5a5; }
-      .panel-title { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
-      .footer-note { margin-top: 10px; font-size: 12px; color: #94a3b8; }
-      a { color: #93c5fd; }
+      body {
+        font-family: 'Inter', sans-serif;
+      }
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #030712;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #1f2937;
+        border-radius: 9999px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #374151;
+      }
     </style>
   </head>
-  <body>
-    <div class="wrap">
-      <section class="hero">
-        <div>
-          <h1>Creator Portal</h1>
-          <p>Sign up or log in as a creator, browse live campaigns, submit your video, and track pending earnings as snapshots update.</p>
-        </div>
-        <div class="toolbar">
-          <button id="refresh-dashboard-btn" class="secondary hidden">Refresh Dashboard</button>
-          <button id="run-due-btn" class="ghost hidden">Run Due Tracking</button>
-          <button id="logout-btn" class="ghost hidden">Log Out</button>
-        </div>
-      </section>
-
-      <section id="auth-view" class="auth-shell">
-        <div class="card">
-          <h2>Create Creator Account</h2>
-          <label>Display Name</label>
-          <input id="signup-display-name" placeholder="Your creator name" />
-          <label>Email</label>
-          <input id="signup-email" type="email" placeholder="you@example.com" />
-          <label>Password</label>
-          <input id="signup-password" type="password" placeholder="Minimum 8 characters" />
-          <label>Bio</label>
-          <textarea id="signup-bio" placeholder="Tell brands a little about yourself"></textarea>
-          <button id="signup-btn">Create Creator Account</button>
+  <body class="bg-dark-950 text-slate-100 min-h-screen antialiased flex flex-col selection:bg-brand-500/30 selection:text-blue-200">
+    <!-- Top Navbar -->
+    <header class="border-b border-dark-800/80 bg-dark-950/80 backdrop-blur-md sticky top-0 z-50">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="h-9 w-9 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-brand-500/20">
+            <i data-lucide="sparkles" class="h-4.5 w-4.5 text-white"></i>
+          </div>
+          <div>
+            <span class="text-sm font-black uppercase tracking-wider text-white">Benchmrk</span>
+            <span class="text-[10px] font-bold text-slate-500 block -mt-1 tracking-widest uppercase">Creator Portal</span>
+          </div>
         </div>
 
-        <div class="card">
-          <h2>Creator Login</h2>
-          <label>Email</label>
-          <input id="login-email" type="email" placeholder="you@example.com" />
-          <label>Password</label>
-          <input id="login-password" type="password" placeholder="Your password" />
-          <button id="login-btn">Log In</button>
-          <div class="footer-note">This portal is creator-only. It uses the existing Benchmrk creator user and profile data model.</div>
+        <!-- Logged In Controls -->
+        <div class="flex items-center gap-2">
+          <button id="refresh-dashboard-btn" class="hidden inline-flex items-center gap-1.5 rounded-xl border border-dark-800 bg-dark-900/60 hover:bg-dark-800 px-4 py-2 text-xs font-semibold text-slate-300 transition duration-150 active:scale-95">
+            <i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i> Refresh
+          </button>
+          <button id="run-due-btn" class="hidden inline-flex items-center gap-1.5 rounded-xl border border-dark-800/60 bg-dark-900/40 hover:bg-dark-850 px-4 py-2 text-xs font-medium text-slate-400 hover:text-slate-200 transition duration-150 active:scale-95">
+            <i data-lucide="activity" class="h-3.5 w-3.5"></i> Run Sync
+          </button>
+          <button id="logout-btn" class="hidden inline-flex items-center gap-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 px-4 py-2 text-xs font-semibold text-red-400 transition duration-150 active:scale-95">
+            <i data-lucide="log-out" class="h-3.5 w-3.5"></i> Exit
+          </button>
         </div>
-      </section>
+      </div>
+    </header>
 
-      <section id="dashboard-view" class="hidden">
-        <div class="card">
-          <div class="panel-title">
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col gap-8">
+      
+      <!-- Auth Screen -->
+      <section id="auth-view" class="max-w-4xl w-full mx-auto grid grid-cols-1 md:grid-cols-2 gap-8 my-auto py-12">
+        <!-- Signup Form -->
+        <div class="bg-dark-900 border border-dark-800/80 rounded-2xl p-6 md:p-8 shadow-2xl flex flex-col gap-5 justify-between">
+          <div>
+            <div class="h-10 w-10 rounded-xl bg-brand-500/10 flex items-center justify-center text-brand-500 mb-4">
+              <i data-lucide="user-plus" class="h-5 w-5"></i>
+            </div>
+            <h2 class="text-xl font-bold text-white tracking-tight">Create Creator Account</h2>
+            <p class="text-xs text-slate-400 mt-1">Join Benchmrk to monetize your views across YouTube and Instagram.</p>
+          </div>
+
+          <div class="space-y-4">
             <div>
-              <h2 id="creator-name">Creator Dashboard</h2>
-              <p id="creator-subtitle" class="muted"></p>
+              <label class="text-xs font-semibold text-slate-400 block mb-1.5">Display Name</label>
+              <input id="signup-display-name" class="w-full rounded-xl border border-dark-800 bg-dark-950 px-3.5 py-2.5 text-sm text-slate-200 placeholder-slate-650 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none transition" placeholder="Your creator name" />
             </div>
-            <span class="status" id="creator-kyc">KYC</span>
+            <div>
+              <label class="text-xs font-semibold text-slate-400 block mb-1.5">Email</label>
+              <input id="signup-email" type="email" class="w-full rounded-xl border border-dark-800 bg-dark-950 px-3.5 py-2.5 text-sm text-slate-200 placeholder-slate-650 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none transition" placeholder="you@example.com" />
+            </div>
+            <div>
+              <label class="text-xs font-semibold text-slate-400 block mb-1.5">Password</label>
+              <input id="signup-password" type="password" class="w-full rounded-xl border border-dark-800 bg-dark-950 px-3.5 py-2.5 text-sm text-slate-200 placeholder-slate-650 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none transition" placeholder="Minimum 8 characters" />
+            </div>
+            <div>
+              <label class="text-xs font-semibold text-slate-400 block mb-1.5">Bio</label>
+              <textarea id="signup-bio" class="w-full rounded-xl border border-dark-800 bg-dark-950 px-3.5 py-2.5 text-sm text-slate-200 placeholder-slate-650 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none transition min-h-[80px]" placeholder="Tell brands about your audience and style..."></textarea>
+            </div>
           </div>
 
-          <div class="stats">
-            <div class="meta-block">
-              <div class="meta-label">Pending</div>
-              <div class="value" id="pending-amount">₹0</div>
-            </div>
-            <div class="meta-block">
-              <div class="meta-label">Withdrawable</div>
-              <div class="value" id="withdrawable-amount">₹0</div>
-            </div>
-            <div class="meta-block">
-              <div class="meta-label">Lifetime Earned</div>
-              <div class="value" id="lifetime-earned">₹0</div>
-            </div>
-            <div class="meta-block">
-              <div class="meta-label">Submissions</div>
-              <div class="value" id="submission-count">0</div>
-            </div>
-            <div class="meta-block">
-              <div class="meta-label">Tracked Views</div>
-              <div class="value" id="tracked-views">0</div>
-            </div>
-          </div>
-          <div class="tiny" id="dashboard-note"></div>
+          <button id="signup-btn" class="w-full mt-4 bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white font-bold py-3 px-4 rounded-xl text-sm transition duration-150 active:scale-95 flex items-center justify-center gap-1.5 shadow-lg shadow-brand-500/10">
+            <i data-lucide="sparkles" class="h-4 w-4"></i> Get Started
+          </button>
         </div>
 
-        <div class="grid" style="margin-top: 16px;">
-          <section class="card">
-            <div class="panel-title">
-              <div>
-                <h3>Submit Video</h3>
-                <p class="muted">Choose any live campaign and submit a video URL. Instagram tracking requires your Instagram professional account to be connected below.</p>
+        <!-- Login Form -->
+        <div class="bg-dark-900 border border-dark-800/80 rounded-2xl p-6 md:p-8 shadow-2xl flex flex-col gap-5 justify-between">
+          <div>
+            <div class="h-10 w-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 mb-4">
+              <i data-lucide="key" class="h-5 w-5"></i>
+            </div>
+            <h2 class="text-xl font-bold text-white tracking-tight">Welcome Back</h2>
+            <p class="text-xs text-slate-400 mt-1">Log in to view campaigns, request payouts, and check your history.</p>
+          </div>
+
+          <div class="space-y-4">
+            <div>
+              <label class="text-xs font-semibold text-slate-400 block mb-1.5">Email</label>
+              <input id="login-email" type="email" class="w-full rounded-xl border border-dark-800 bg-dark-950 px-3.5 py-2.5 text-sm text-slate-200 placeholder-slate-655 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none transition" placeholder="you@example.com" />
+            </div>
+            <div>
+              <label class="text-xs font-semibold text-slate-400 block mb-1.5">Password</label>
+              <input id="login-password" type="password" class="w-full rounded-xl border border-dark-800 bg-dark-950 px-3.5 py-2.5 text-sm text-slate-200 placeholder-slate-655 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none transition" placeholder="Your password" />
+            </div>
+          </div>
+
+          <button id="login-btn" class="w-full mt-4 bg-slate-100 hover:bg-white text-dark-950 font-bold py-3 px-4 rounded-xl text-sm transition duration-150 active:scale-95 flex items-center justify-center gap-1.5">
+            <i data-lucide="log-in" class="h-4 w-4"></i> Access Portal
+          </button>
+          
+          <p class="text-[10px] text-slate-500 text-center leading-relaxed">By logging in, you access secure creator tools. Benchmrk aggregates view tracking and locks incremental payouts securely to your blockchain or fiat settlement wallet.</p>
+        </div>
+      </section>
+
+      <!-- Creator Dashboard Screen (Initially Hidden) -->
+      <section id="dashboard-view" class="hidden flex flex-col gap-8">
+        
+        <!-- Profile Card -->
+        <div class="bg-gradient-to-r from-dark-900 via-dark-900 to-brand-900/10 border border-dark-800/80 rounded-2xl p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-xl relative overflow-hidden">
+          <div class="absolute inset-0 bg-[radial-gradient(circle_at_70%_120%,rgba(59,130,246,0.08),transparent_50%)]"></div>
+          
+          <div class="flex items-center gap-4 relative z-10">
+            <div class="h-16 w-16 rounded-2xl bg-gradient-to-tr from-brand-500 to-violet-500 p-0.5 shadow-lg">
+              <div class="h-full w-full bg-dark-900 rounded-[14px] flex items-center justify-center font-bold text-xl text-white tracking-wider" id="avatar-fallback">
+                CR
               </div>
             </div>
-            <label>Campaign</label>
-            <select id="submission-campaign"></select>
-            <label>Platform</label>
-            <select id="submission-platform">
-              <option value="YOUTUBE">YouTube</option>
-              <option value="INSTAGRAM">Instagram</option>
-            </select>
-            <label>Video URL</label>
-            <input id="submission-url" placeholder="https://youtube.com/watch?v=..." />
-            <button id="submit-video-btn">Submit Video</button>
-            <div class="footer-note">The creator portal auto-creates an accepted application for the selected live campaign so you can test submission flow quickly.</div>
-          </section>
-
-          <section class="card">
-            <div class="panel-title">
-              <div>
-                <h3>Instagram Connection</h3>
-                <p class="muted">Connect your own Instagram professional account so Benchmrk can read metrics for your existing and newly posted reels/videos.</p>
+            <div class="space-y-1">
+              <div class="flex items-center gap-2.5 flex-wrap">
+                <h2 class="text-xl font-bold text-white tracking-tight" id="creator-name">Creator Dashboard</h2>
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase" id="creator-kyc">KYC: Verified</span>
               </div>
+              <p id="creator-subtitle" class="text-xs text-slate-400 font-medium leading-relaxed max-w-xl"></p>
             </div>
-            <div id="instagram-connection-status" class="footer-note">Instagram not connected.</div>
-            <div class="toolbar" style="margin-top: 12px;">
-              <button id="instagram-connect-btn">Connect Instagram Account</button>
-              <button id="instagram-baseline-btn" class="secondary">Rebuild Instagram Baseline</button>
-            </div>
-            <div class="footer-note">After connection, submit an Instagram reel/post URL from that same account. Tracking snapshots will then run on the normal submission schedule.</div>
-          </section>
-
-          <section class="card">
-            <div class="panel-title">
-              <div>
-                <h3>Live Campaigns</h3>
-                <p class="muted">These are the campaigns currently available to creators.</p>
-              </div>
-            </div>
-            <div id="campaign-list" class="list"></div>
-          </section>
+          </div>
+          
+          <div class="flex flex-col gap-1.5 text-left md:text-right relative z-10 shrink-0">
+            <span class="text-[10px] font-extrabold uppercase tracking-widest text-slate-500">Platform Reputation</span>
+            <div class="text-2xl font-black text-white" id="reputation-score-text">0.00</div>
+            <span class="text-[10px] text-slate-400" id="projected-value-hint">Projected value: ₹0.00</span>
+          </div>
         </div>
 
-        <section class="card" style="margin-top: 16px;">
-          <div class="panel-title">
-            <div>
-              <h3>Your Submissions</h3>
-              <p class="muted">Pending value is estimated from the latest snapshot and brand CPV, minus any already verified batches.</p>
+        <!-- Core Numbers -->
+        <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
+          <div class="bg-dark-900 border border-dark-800/80 rounded-2xl p-5 shadow-sm hover:border-dark-700 transition duration-150">
+            <div class="flex items-center justify-between text-slate-500">
+              <span class="text-[10px] font-extrabold uppercase tracking-widest">Pending</span>
+              <div class="h-7 w-7 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-400">
+                <i data-lucide="clock" class="h-4 w-4"></i>
+              </div>
             </div>
+            <div class="text-2xl font-black text-white mt-3" id="pending-amount">₹0</div>
+            <span class="text-[9px] text-slate-500 mt-1 block">Accumulating views</span>
           </div>
-          <div id="submission-list" class="list"></div>
-        </section>
 
-        <section class="card" style="margin-top: 16px;">
-          <div class="panel-title">
-            <div>
-              <h3>Wallet / Account History</h3>
-              <p class="muted">Only finalized money movements are shown here: when money becomes withdrawable, and later when money is actually withdrawn.</p>
+          <div class="bg-dark-900 border border-dark-800/80 rounded-2xl p-5 shadow-sm hover:border-dark-700 transition duration-150">
+            <div class="flex items-center justify-between text-slate-500">
+              <span class="text-[10px] font-extrabold uppercase tracking-widest">Withdrawable</span>
+              <div class="h-7 w-7 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+                <i data-lucide="wallet" class="h-4 w-4"></i>
+              </div>
             </div>
+            <div class="text-2xl font-black text-emerald-400 mt-3" id="withdrawable-amount">₹0</div>
+            <span class="text-[9px] text-slate-500 mt-1 block">Ready to withdraw</span>
           </div>
-          <div id="wallet-history-list" class="list"></div>
-        </section>
+
+          <div class="bg-dark-900 border border-dark-800/80 rounded-2xl p-5 shadow-sm hover:border-dark-700 transition duration-150">
+            <div class="flex items-center justify-between text-slate-500">
+              <span class="text-[10px] font-extrabold uppercase tracking-widest">Lifetime Earned</span>
+              <div class="h-7 w-7 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-400">
+                <i data-lucide="line-chart" class="h-4 w-4"></i>
+              </div>
+            </div>
+            <div class="text-2xl font-black text-white mt-3" id="lifetime-earned">₹0</div>
+            <span class="text-[9px] text-slate-500 mt-1 block">Finalized earnings</span>
+          </div>
+
+          <div class="bg-dark-900 border border-dark-800/80 rounded-2xl p-5 shadow-sm hover:border-dark-700 transition duration-150">
+            <div class="flex items-center justify-between text-slate-500">
+              <span class="text-[10px] font-extrabold uppercase tracking-widest">Submissions</span>
+              <div class="h-7 w-7 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400">
+                <i data-lucide="video" class="h-4 w-4"></i>
+              </div>
+            </div>
+            <div class="text-2xl font-black text-white mt-3" id="submission-count">0</div>
+            <span class="text-[9px] text-slate-500 mt-1 block">Total videos posted</span>
+          </div>
+
+          <div class="bg-dark-900 border border-dark-800/80 rounded-2xl p-5 shadow-sm hover:border-dark-700 transition duration-150 col-span-2 lg:col-span-1">
+            <div class="flex items-center justify-between text-slate-500">
+              <span class="text-[10px] font-extrabold uppercase tracking-widest">Tracked Views</span>
+              <div class="h-7 w-7 rounded-lg bg-pink-500/10 flex items-center justify-center text-pink-400">
+                <i data-lucide="eye" class="h-4 w-4"></i>
+              </div>
+            </div>
+            <div class="text-2xl font-black text-white mt-3" id="tracked-views">0</div>
+            <span class="text-[9px] text-slate-500 mt-1 block">Latest combined views</span>
+          </div>
+        </div>
+
+        <!-- Two Column Workspace -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          
+          <!-- Left Column (Submissions & History) -->
+          <div class="lg:col-span-8 flex flex-col gap-8">
+            
+            <!-- Submissions -->
+            <section class="bg-dark-900 border border-dark-800/80 rounded-2xl p-6 shadow-sm flex flex-col gap-4">
+              <div class="flex items-center justify-between border-b border-dark-800 pb-3">
+                <div>
+                  <h3 class="text-base font-bold text-white flex items-center gap-2">
+                    <i data-lucide="video" class="h-4 w-4 text-brand-500"></i> Your Submissions
+                  </h3>
+                  <p class="text-xs text-slate-400 mt-0.5">Track views, pending balances, and verified withdrawable earnings.</p>
+                </div>
+              </div>
+              <div id="submission-list" class="space-y-4">
+                <!-- Submissions render here -->
+              </div>
+            </section>
+
+            <!-- Wallet History -->
+            <section class="bg-dark-900 border border-dark-800/80 rounded-2xl p-6 shadow-sm flex flex-col gap-4">
+              <div class="flex items-center justify-between border-b border-dark-800 pb-3">
+                <div>
+                  <h3 class="text-base font-bold text-white flex items-center gap-2">
+                    <i data-lucide="history" class="h-4 w-4 text-brand-500"></i> Wallet / Account History
+                  </h3>
+                  <p class="text-xs text-slate-400 mt-0.5">Finalized ledger payouts and withdrawal movements.</p>
+                </div>
+              </div>
+              <div id="wallet-history-list" class="space-y-4">
+                <!-- History renders here -->
+              </div>
+            </section>
+
+          </div>
+
+          <!-- Right Column (Forms & Campaigns) -->
+          <div class="lg:col-span-4 flex flex-col gap-8">
+            
+            <!-- Submit Form -->
+            <section class="bg-dark-900 border border-dark-800/80 rounded-2xl p-6 shadow-sm flex flex-col gap-5">
+              <div>
+                <h3 class="text-base font-bold text-white flex items-center gap-2">
+                  <i data-lucide="plus-circle" class="h-4 w-4 text-brand-500"></i> Submit Video
+                </h3>
+                <p class="text-xs text-slate-400 mt-0.5">Enter your video or reel link for view monetization.</p>
+              </div>
+
+              <div class="space-y-4">
+                <div>
+                  <label class="text-xs font-semibold text-slate-400 block mb-1.5">Campaign</label>
+                  <select id="submission-campaign" class="w-full rounded-xl border border-dark-800 bg-dark-950 px-3.5 py-2.5 text-xs font-medium text-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none transition"></select>
+                </div>
+                <div>
+                  <label class="text-xs font-semibold text-slate-400 block mb-1.5">Platform</label>
+                  <select id="submission-platform" class="w-full rounded-xl border border-dark-800 bg-dark-950 px-3.5 py-2.5 text-xs font-medium text-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none transition">
+                    <option value="YOUTUBE">YouTube</option>
+                    <option value="INSTAGRAM">Instagram</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="text-xs font-semibold text-slate-400 block mb-1.5">Video URL</label>
+                  <input id="submission-url" class="w-full rounded-xl border border-dark-800 bg-dark-950 px-3.5 py-2.5 text-xs font-medium text-slate-200 placeholder-slate-600 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none transition" placeholder="https://youtube.com/watch?v=..." />
+                </div>
+              </div>
+
+              <button id="submit-video-btn" class="w-full bg-brand-600 hover:bg-brand-500 text-white font-bold py-3 px-4 rounded-xl text-xs transition duration-150 active:scale-95 flex items-center justify-center gap-1.5 shadow-lg shadow-brand-500/10">
+                <i data-lucide="upload-cloud" class="h-4 w-4"></i> Submit Video Link
+              </button>
+              
+              <div class="rounded-xl bg-dark-950 border border-dark-800/60 p-3 text-[10px] text-slate-500 leading-relaxed">
+                An accepted brand application is auto-created behind the scenes so your video tracking starts immediately.
+              </div>
+            </section>
+
+            <!-- Instagram Sync Connection -->
+            <section class="bg-dark-900 border border-dark-800/80 rounded-2xl p-6 shadow-sm flex flex-col gap-5">
+              <div>
+                <h3 class="text-base font-bold text-white flex items-center gap-2">
+                  <i data-lucide="instagram" class="h-4 w-4 text-brand-500"></i> Instagram Connection
+                </h3>
+                <p class="text-xs text-slate-400 mt-0.5">Integrate your professional IG account for real-time tracking.</p>
+              </div>
+
+              <div class="rounded-xl bg-dark-950 border border-dark-800 p-4">
+                <div class="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 mb-1.5">Connection Status</div>
+                <p class="text-xs text-slate-300 font-medium leading-relaxed" id="instagram-connection-status">Checking connection...</p>
+              </div>
+
+              <div class="flex flex-col gap-2">
+                <button id="instagram-connect-btn" class="w-full bg-dark-950 hover:bg-dark-800 border border-dark-800 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition duration-150 active:scale-95 flex items-center justify-center gap-1.5">
+                  <i data-lucide="link" class="h-3.5 w-3.5"></i> Connect Instagram
+                </button>
+                <button id="instagram-baseline-btn" class="w-full bg-slate-800 hover:bg-slate-700 text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition duration-150 active:scale-95 flex items-center justify-center gap-1.5">
+                  <i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i> Rebuild Baseline
+                </button>
+              </div>
+            </section>
+
+            <!-- Campaigns List -->
+            <section class="bg-dark-900 border border-dark-800/80 rounded-2xl p-6 shadow-sm flex flex-col gap-4">
+              <div class="border-b border-dark-800 pb-3">
+                <h3 class="text-base font-bold text-white flex items-center gap-2">
+                  <i data-lucide="award" class="h-4 w-4 text-brand-500"></i> Available Campaigns
+                </h3>
+                <p class="text-xs text-slate-400 mt-0.5">Participate and earn CPV payouts based on views.</p>
+              </div>
+              <div id="campaign-list" class="space-y-4">
+                <!-- Campaigns render here -->
+              </div>
+            </section>
+
+          </div>
+        </div>
       </section>
 
-      <section class="card" style="margin-top: 16px;">
-        <h3>Activity</h3>
-        <div id="status" class="tiny"></div>
-        <pre id="output" style="white-space: pre-wrap; word-break: break-word; background: #020617; border: 1px solid #334155; border-radius: 12px; padding: 14px; min-height: 160px;"></pre>
+      <!-- Activity Log Card (Collapsible style or cleanly tucked) -->
+      <section class="bg-dark-900 border border-dark-800/80 rounded-2xl p-6 shadow-sm flex flex-col gap-3">
+        <div class="flex items-center justify-between">
+          <h3 class="text-xs font-extrabold uppercase tracking-widest text-slate-500 flex items-center gap-1.5">
+            <i data-lucide="terminal" class="h-3.5 w-3.5"></i> Dev Diagnostics Console
+          </h3>
+          <div id="status" class="text-3xs font-semibold uppercase tracking-wider text-slate-400">Ready</div>
+        </div>
+        <pre id="output" class="bg-dark-950 border border-dark-800 rounded-xl p-4 text-3xs font-mono text-slate-400 leading-relaxed overflow-x-auto max-h-[140px]"></pre>
       </section>
-    </div>
+    </main>
 
     <script>
       const authView = document.getElementById('auth-view');
@@ -217,7 +392,7 @@ const page = String.raw`<!doctype html>
       let dashboardData = null;
 
       function setStatus(message, kind = 'info') {
-        statusEl.className = 'tiny ' + (kind === 'error' ? 'error' : kind === 'success' ? 'success' : '');
+        statusEl.className = 'text-3xs font-bold uppercase tracking-wider ' + (kind === 'error' ? 'text-red-400' : kind === 'success' ? 'text-emerald-400' : 'text-slate-400');
         statusEl.textContent = message;
       }
 
@@ -234,7 +409,7 @@ const page = String.raw`<!doctype html>
       function formatDate(value) {
         if (!value) return '—';
         const date = new Date(value);
-        return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+        return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
       }
 
       async function api(path, options = {}) {
@@ -266,119 +441,191 @@ const page = String.raw`<!doctype html>
 
       function renderCampaignOptions(campaigns) {
         if (!Array.isArray(campaigns) || campaigns.length === 0) {
-          campaignSelect.innerHTML = '<option value="">No live campaigns available</option>';
+          campaignSelect.innerHTML = '<option value="">No available campaigns right now</option>';
           return;
         }
         campaignSelect.innerHTML = campaigns.map((campaign) => {
-          return '<option value="' + campaign.id + '">' + campaign.title + ' | ' + campaign.brandName + ' | Budget=' + formatCurrency(campaign.totalBudget) + ' | Left=' + formatCurrency(campaign.remainingBudget) + ' | $/1000=' + Number(campaign.dollarsPerThousandViews || 0).toFixed(2) + '</option>';
+          return '<option value="' + campaign.id + '">' + campaign.title + ' (Budget remaining: ' + formatCurrency(campaign.remainingBudget) + ')</option>';
         }).join('');
       }
 
       function renderCampaigns(campaigns) {
         const container = document.getElementById('campaign-list');
         if (!Array.isArray(campaigns) || campaigns.length === 0) {
-          container.innerHTML = '<div class="campaign-item"><div class="muted">No live campaigns found.</div></div>';
+          container.innerHTML = '<div class="rounded-xl border border-dashed border-dark-800 p-6 text-center text-xs text-slate-500"><i data-lucide="info" class="h-5 w-5 mx-auto mb-1.5 text-slate-600"></i>No available campaigns right now. Exhausted campaigns are automatically removed.</div>';
           renderCampaignOptions([]);
+          lucide.createIcons();
           return;
         }
 
         renderCampaignOptions(campaigns);
         container.innerHTML = campaigns.map((campaign) => {
+          const sweepPill = campaign.isSweepEligible ? 'bg-brand-500/10 text-brand-400 border border-brand-500/20' : 'bg-slate-800 text-slate-400 border border-dark-800';
           return [
-            '<div class="campaign-item">',
-            '<div class="panel-title"><strong>' + campaign.title + '</strong><span class="status">' + campaign.brandName + '</span></div>',
-            '<p class="muted">' + (campaign.description || 'No description provided.') + '</p>',
-            '<div class="campaign-meta">',
-            '<div class="meta-block"><div class="meta-label">Guidelines</div><div class="meta-value">' + (campaign.guidelines || '—') + '</div></div>',
-            '<div class="meta-block"><div class="meta-label">Campaign Budget</div><div class="meta-value">' + formatCurrency(campaign.totalBudget) + '</div></div>',
-            '<div class="meta-block"><div class="meta-label">Budget Remaining</div><div class="meta-value">' + formatCurrency(campaign.remainingBudget) + '</div></div>',
-            '<div class="meta-block"><div class="meta-label">$ / 1000 Views</div><div class="meta-value">' + Number(campaign.dollarsPerThousandViews || 0).toFixed(2) + '</div></div>',
-            '<div class="meta-block"><div class="meta-label">Min Incremental Views</div><div class="meta-value">' + formatNumber(campaign.minimumPayoutViews) + '</div></div>',
-            '<div class="meta-block"><div class="meta-label">Per Video Cap</div><div class="meta-value">' + formatCurrency(campaign.maxPayoutPerSubmission) + '</div></div>',
-            '<div class="meta-block"><div class="meta-label">Sweep Eligible</div><div class="meta-value">' + (campaign.isSweepEligible ? 'Ready' : formatDate(campaign.sweepEligibleAt)) + '</div></div>',
-            '</div>',
-            '</div>',
-          ].join('');
+            '<div class="rounded-xl border border-dark-800/80 bg-dark-900/40 p-4 space-y-3 shadow-2xs hover:border-dark-700 transition">',
+            '  <div class="flex items-start justify-between gap-3">',
+            '    <div>',
+            '      <h4 class="text-xs font-bold text-white tracking-tight">' + escapeHtml(campaign.title) + '</h4>',
+            '      <span class="text-[9px] font-semibold text-slate-500 block">' + escapeHtml(campaign.brandName) + '</span>',
+            '    </div>',
+            '    <span class="inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold ' + sweepPill + '">',
+            '      Sweep: ' + (campaign.isSweepEligible ? 'Ready' : 'Pending'),
+            '    </span>',
+            '  </div>',
+            '  <p class="text-[11px] text-slate-400 leading-normal line-clamp-2">' + escapeHtml(campaign.description || 'No description provided.') + '</p>',
+            '  <div class="grid grid-cols-2 gap-2 text-[10px] bg-dark-950/60 border border-dark-850 p-2.5 rounded-lg">',
+            '    <div>',
+            '      <span class="text-slate-500 block">Payout Rate</span>',
+            '      <span class="font-bold text-white">₹' + Number(campaign.dollarsPerThousandViews || 0).toFixed(2) + ' <span class="text-[8px] font-medium text-slate-500">/ 1k views</span></span>',
+            '    </div>',
+            '    <div>',
+            '      <span class="text-slate-500 block">Remaining Budget</span>',
+            '      <span class="font-bold text-emerald-400">' + formatCurrency(campaign.remainingBudget) + '</span>',
+            '    </div>',
+            '  </div>',
+            '</div>'
+          ].join('\n');
         }).join('');
+        lucide.createIcons();
       }
 
       function renderSubmissions(submissions) {
         const container = document.getElementById('submission-list');
         if (!Array.isArray(submissions) || submissions.length === 0) {
-          container.innerHTML = '<div class="submission-item"><div class="muted">No submissions yet.</div></div>';
+          container.innerHTML = '<div class="rounded-xl border border-dashed border-dark-800 p-8 text-center text-xs text-slate-500"><i data-lucide="video" class="h-6 w-6 mx-auto mb-2 text-slate-605"></i>No video submissions tracked yet. Choose an available campaign to get started.</div>';
+          lucide.createIcons();
           return;
         }
 
         container.innerHTML = submissions.map((submission) => {
+          const statusStyle = submission.status === 'UNDER_REVIEW'
+            ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+            : submission.status === 'VERIFIED'
+              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+              : 'bg-slate-800 text-slate-400 border border-dark-800';
+
+          const platformIcon = submission.platform === 'YOUTUBE' ? 'youtube' : 'instagram';
+
           return [
-            '<div class="submission-item">',
-            '<div class="panel-title"><strong>' + submission.campaignTitle + '</strong><span class="status">' + submission.status + '</span></div>',
-            '<div class="tiny"><a href="' + submission.contentUrl + '" target="_blank" rel="noreferrer">' + submission.contentUrl + '</a></div>',
-            '<div class="submission-meta">',
-            '<div class="meta-block"><div class="meta-label">Platform</div><div class="meta-value">' + submission.platform + '</div></div>',
-            '<div class="meta-block"><div class="meta-label">Submitted</div><div class="meta-value">' + formatDate(submission.createdAt) + '</div></div>',
-            '<div class="meta-block"><div class="meta-label">Latest Views</div><div class="meta-value">' + formatNumber(submission.latestViews) + '</div></div>',
-            '<div class="meta-block"><div class="meta-label">Verified Views</div><div class="meta-value">' + formatNumber(submission.verifiedViews) + '</div></div>',
-            '<div class="meta-block"><div class="meta-label">Pending</div><div class="meta-value">' + formatCurrency(submission.pendingAmount) + '</div></div>',
-            '<div class="meta-block"><div class="meta-label">Withdrawable</div><div class="meta-value">' + formatCurrency(submission.withdrawableAmount) + '</div></div>',
-            '<div class="meta-block"><div class="meta-label">Projected Value</div><div class="meta-value">' + formatCurrency(submission.projectedValue) + '</div></div>',
-            '<div class="meta-block"><div class="meta-label">Campaign Budget</div><div class="meta-value">' + formatCurrency(submission.totalBudget) + '</div></div>',
-            '<div class="meta-block"><div class="meta-label">Budget Remaining</div><div class="meta-value">' + formatCurrency(submission.remainingBudget) + '</div></div>',
-            '<div class="meta-block"><div class="meta-label">Last Snapshot</div><div class="meta-value">' + formatDate(submission.latestSnapshotAt) + '</div></div>',
-            '<div class="meta-block"><div class="meta-label">Min Incremental Views</div><div class="meta-value">' + formatNumber(submission.minimumIncrementalViewsPerSweep) + '</div></div>',
-            '</div>',
-            '</div>',
-          ].join('');
+            '<div class="rounded-xl border border-dark-800/80 bg-dark-900/60 p-5 space-y-4 hover:border-dark-700 transition">',
+            '  <div class="flex items-start justify-between gap-4 flex-wrap">',
+            '    <div class="space-y-1">',
+            '      <div class="flex items-center gap-2 flex-wrap">',
+            '        <h4 class="text-xs font-bold text-white tracking-tight">' + escapeHtml(submission.campaignTitle) + '</h4>',
+            '        <span class="inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold ' + statusStyle + ' border">',
+            '          ' + submission.status,
+            '        </span>',
+            '      </div>',
+            '      <div class="flex items-center gap-1.5 text-xs text-slate-500">',
+            '        <i data-lucide="' + platformIcon + '" class="h-3.5 w-3.5 ' + (submission.platform === 'YOUTUBE' ? 'text-red-500' : 'text-pink-500') + '"></i>',
+            '        <a href="' + submission.contentUrl + '" target="_blank" rel="noreferrer" class="hover:underline hover:text-slate-300 truncate max-w-[280px] font-medium inline-block">' + escapeHtml(submission.contentUrl) + '</a>',
+            '      </div>',
+            '    </div>',
+            '    <div class="text-[10px] text-slate-500 text-right">',
+            '      Submitted ' + formatDate(submission.createdAt),
+            '    </div>',
+            '  </div>',
+            '  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 bg-dark-950/45 p-3 rounded-xl border border-dark-850">',
+            '    <div>',
+            '      <span class="text-[9px] font-extrabold text-slate-500 uppercase tracking-widest block">Current Views</span>',
+            '      <span class="text-xs font-bold text-white">' + formatNumber(submission.latestViews) + '</span>',
+            '    </div>',
+            '    <div>',
+            '      <span class="text-[9px] font-extrabold text-slate-500 uppercase tracking-widest block">Verified Views</span>',
+            '      <span class="text-xs font-bold text-white">' + formatNumber(submission.verifiedViews) + '</span>',
+            '    </div>',
+            '    <div>',
+            '      <span class="text-[9px] font-extrabold text-slate-500 uppercase tracking-widest block">Pending Balance</span>',
+            '      <span class="text-xs font-bold text-slate-300">' + formatCurrency(submission.pendingAmount) + '</span>',
+            '    </div>',
+            '    <div>',
+            '      <span class="text-[9px] font-extrabold text-slate-500 uppercase tracking-widest block">Withdrawn / Released</span>',
+            '      <span class="text-xs font-bold text-emerald-400">' + formatCurrency(submission.withdrawableAmount) + '</span>',
+            '    </div>',
+            '  </div>',
+            '  <div class="flex items-center justify-between text-[9px] text-slate-500 flex-wrap gap-2">',
+            '    <span>Projected gross value: <strong>' + formatCurrency(submission.projectedValue) + '</strong></span>',
+            '    <span>Latest snapshot checked: <strong>' + formatDate(submission.latestSnapshotAt) + '</strong></span>',
+            '  </div>',
+            '</div>'
+          ].join('\n');
         }).join('');
+        lucide.createIcons();
       }
 
       function renderWalletHistory(entries) {
         const container = document.getElementById('wallet-history-list');
         if (!Array.isArray(entries) || entries.length === 0) {
-          container.innerHTML = '<div class="history-item"><div class="muted">No finalized wallet history yet.</div></div>';
+          container.innerHTML = '<div class="rounded-xl border border-dashed border-dark-800 p-8 text-center text-xs text-slate-500"><i data-lucide="wallet" class="h-6 w-6 mx-auto mb-2 text-slate-605"></i>No wallet movements recorded yet. Earnings will appear as payments verify.</div>';
+          lucide.createIcons();
           return;
         }
 
         container.innerHTML = entries.map((entry) => {
-          const title = entry.entryType === 'WITHDRAWAL'
-            ? 'Withdrawal completed'
-            : 'Money became withdrawable';
+          const isWithdrawal = entry.entryType === 'WITHDRAWAL';
+          const title = isWithdrawal ? 'Withdrawal completed' : 'Earnings finalized';
+          const badgeBg = isWithdrawal ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
           const when = entry.releasedAt || entry.createdAt;
           const submissionText = entry.submission
-            ? (entry.submission.campaignTitle || 'Campaign') + ' • ' + entry.submission.platform
+            ? (entry.submission.campaignTitle || 'Campaign') + ' (' + entry.submission.platform + ')'
             : 'Wallet-level entry';
 
           return [
-            '<div class="history-item">',
-            '<div class="panel-title"><strong>' + title + '</strong><span class="status">' + entry.status + '</span></div>',
-            '<div class="history-meta">',
-            '<div class="meta-block"><div class="meta-label">Amount</div><div class="meta-value">' + formatCurrency(entry.amount) + '</div></div>',
-            '<div class="meta-block"><div class="meta-label">Type</div><div class="meta-value">' + entry.entryType + '</div></div>',
-            '<div class="meta-block"><div class="meta-label">When</div><div class="meta-value">' + formatDate(when) + '</div></div>',
-            '<div class="meta-block"><div class="meta-label">Source</div><div class="meta-value">' + submissionText + '</div></div>',
-            '</div>',
-            (entry.submission?.contentUrl ? '<div class="tiny" style="margin-top: 10px;"><a href="' + entry.submission.contentUrl + '" target="_blank" rel="noreferrer">' + entry.submission.contentUrl + '</a></div>' : ''),
-            (entry.notes ? '<div class="footer-note">' + entry.notes + '</div>' : ''),
+            '<div class="rounded-xl border border-dark-800 bg-dark-900/40 p-4 space-y-3 hover:border-dark-700 transition">',
+            '  <div class="flex items-center justify-between gap-3 flex-wrap">',
+            '    <div class="flex items-center gap-2">',
+            '      <div class="h-6 w-6 rounded bg-brand-500/10 flex items-center justify-center text-brand-500">',
+            '        <i data-lucide="' + (isWithdrawal ? 'send' : 'arrow-down-left') + '" class="h-3.5 w-3.5"></i>',
+            '      </div>',
+            '      <span class="text-xs font-bold text-white">' + title + '</span>',
+            '      <span class="inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold ' + badgeBg + ' border">',
+            '        ' + entry.status,
+            '      </span>',
+            '    </div>',
+            '    <span class="text-xs font-bold text-slate-300">' + formatCurrency(entry.amount) + '</span>',
+            '  </div>',
+            '  <div class="flex items-center justify-between text-[10px] text-slate-500 flex-wrap gap-2">',
+            '    <span>Source: <strong class="text-slate-400">' + escapeHtml(submissionText) + '</strong></span>',
+            '    <span>Processed: <strong>' + formatDate(when) + '</strong></span>',
+            '  </div>',
+            (entry.notes ? '  <p class="text-[10px] italic bg-dark-950/45 p-2 rounded border border-dark-850 text-slate-400 leading-normal">' + escapeHtml(entry.notes) + '</p>' : ''),
             '</div>'
-          ].join('');
+          ].join('\n');
         }).join('');
+        lucide.createIcons();
       }
 
       function renderDashboard(data) {
         dashboardData = data;
         document.getElementById('creator-name').textContent = data.creator.displayName + ' Dashboard';
-        document.getElementById('creator-subtitle').textContent = data.creator.email + (data.creator.bio ? ' • ' + data.creator.bio : '');
+        document.getElementById('creator-subtitle').innerHTML = data.creator.email + (data.creator.bio ? ' <span class="text-slate-600 px-1">•</span> ' + data.creator.bio : '');
         document.getElementById('creator-kyc').textContent = 'KYC: ' + data.creator.kycStatus;
+        
+        // Generate elegant fallback initials for avatar
+        const initials = String(data.creator.displayName || 'CR')
+          .split(' ')
+          .slice(0, 2)
+          .map(word => word[0] || '')
+          .join('')
+          .toUpperCase();
+        document.getElementById('avatar-fallback').textContent = initials;
+
+        // Reputation scoring values
+        document.getElementById('reputation-score-text').textContent = Number(data.creator.reputationScore || 0).toFixed(2);
+        document.getElementById('projected-value-hint').textContent = 'Projected value: ' + formatCurrency(data.summary.totalProjectedValue);
+
+        // Top statistics counters
         document.getElementById('pending-amount').textContent = formatCurrency(data.summary.pendingAmount);
         document.getElementById('withdrawable-amount').textContent = formatCurrency(data.summary.withdrawableAmount);
         document.getElementById('lifetime-earned').textContent = formatCurrency(data.summary.lifetimeEarned);
         document.getElementById('submission-count').textContent = formatNumber(data.summary.totalSubmissions);
         document.getElementById('tracked-views').textContent = formatNumber(data.summary.totalLatestViews);
-        document.getElementById('dashboard-note').textContent = 'Projected value: ' + formatCurrency(data.summary.totalProjectedValue) + ' • Reputation score: ' + Number(data.creator.reputationScore || 0).toFixed(2);
+
         const instagram = data.integrations?.instagram;
         document.getElementById('instagram-connection-status').textContent = instagram?.connected
-          ? 'Connected: @' + (instagram.username || 'instagram-account') + ' • Followers: ' + formatNumber(instagram.followerCount) + ' • Type: ' + (instagram.accountType || 'PROFESSIONAL')
+          ? 'Connected: @' + (instagram.username || 'instagram-account') + ' (' + formatNumber(instagram.followerCount) + ' followers)'
           : 'Instagram not connected yet. Connect your professional account before submitting Instagram videos.';
+
         renderCampaigns(data.campaigns);
         renderSubmissions(data.submissions);
         renderWalletHistory(data.walletHistory);

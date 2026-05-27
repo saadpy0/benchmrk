@@ -122,6 +122,27 @@ async function ensureCreatorAcceptedForCampaign(userId: string, campaignId: stri
     throw new Error('Only LIVE campaigns can accept submissions');
   }
 
+  const releasedEntries = await (prisma.balanceLedgerEntry as any).findMany({
+    where: {
+      entryType: 'RELEASE_TO_AVAILABLE',
+      reviewBatch: {
+        campaignId: campaign.id,
+      },
+    },
+    include: {
+      reviewBatch: {
+        select: {
+          campaignId: true,
+        },
+      },
+    },
+  });
+  const releasedSpend = releasedEntries.reduce((sum: number, entry: any) => sum + Number(entry.amount ?? 0), 0);
+  const remainingBudget = Math.max(Number(campaign.totalBudget ?? 0) - releasedSpend, 0);
+  if (remainingBudget <= 0) {
+    throw new Error('Campaign budget is exhausted');
+  }
+
   await prisma.application.upsert({
     where: {
       campaignId_creatorId: {
@@ -326,7 +347,7 @@ const page = String.raw`<!doctype html>
 
         <section class="card">
           <h2>2. Campaign Selection</h2>
-          <label>Available LIVE Campaigns</label>
+          <label>Available Campaigns</label>
           <select id="campaign-select"></select>
           <div class="hint" id="campaign-selection-hint">Loading campaigns...</div>
         </section>
@@ -652,13 +673,13 @@ const page = String.raw`<!doctype html>
         if (!Array.isArray(campaigns)) return '';
 
         const lines = [
-          'LIVE CAMPAIGNS',
+          'AVAILABLE CAMPAIGNS',
           'Count: ' + formatNumber(campaigns.length),
           '',
         ];
 
         if (campaigns.length === 0) {
-          lines.push('No LIVE campaigns yet. Create one from the Brand Campaign Setup card.');
+          lines.push('No available campaigns right now. Create one from the Brand Campaign Setup card, or check whether existing campaigns are exhausted.');
           return lines.join('\n');
         }
 
@@ -761,14 +782,14 @@ const page = String.raw`<!doctype html>
 
       function setCampaignOptions(campaigns) {
         const optionsHtml = Array.isArray(campaigns) && campaigns.length > 0
-          ? campaigns.map((campaign) => '<option value="' + campaign.id + '">' + campaign.title + ' | $/1000=' + Number(campaign.dollarsPerThousandViews || 0).toFixed(2) + ' | Sweep ' + (campaign.isSweepEligible ? 'READY' : 'PENDING') + '</option>').join('\n')
-          : '<option value="">No LIVE campaigns yet</option>';
+          ? campaigns.map((campaign) => '<option value="' + campaign.id + '">' + campaign.title + ' | Left=' + Number(campaign.remainingBudget || 0).toFixed(2) + ' | $/1000=' + Number(campaign.dollarsPerThousandViews || 0).toFixed(2) + ' | Sweep ' + (campaign.isSweepEligible ? 'READY' : 'PENDING') + '</option>').join('\n')
+          : '<option value="">No available campaigns right now</option>';
 
         campaignSelect.innerHTML = optionsHtml;
         youtubeCampaignSelect.innerHTML = optionsHtml;
         campaignSelectionHint.textContent = Array.isArray(campaigns) && campaigns.length > 0
           ? 'Choose a campaign below. Creator submissions will be attached to the selected campaign.'
-          : 'Create a LIVE campaign first.';
+          : 'Create a campaign with remaining budget first.';
       }
 
       async function loadCampaigns() {
@@ -931,6 +952,7 @@ function serializeCampaignForDev(campaign: any, now = new Date()) {
     endDate: campaign.endDate,
     status: campaign.status,
     totalBudget: Number(campaign.totalBudget ?? 0),
+    remainingBudget: Number(campaign.remainingBudget ?? campaign.totalBudget ?? 0),
     minimumPayoutViews: Number(campaign.minimumPayoutViews ?? 0),
     maxPayoutPerSubmission: Number(campaign.maxPayoutPerSubmission ?? 0),
     dollarsPerThousandViews,
@@ -1030,9 +1052,39 @@ export async function baselineDevRoutes(app: FastifyInstance) {
         orderBy: { createdAt: 'desc' },
       });
 
+      const releasedEntries = await (prisma.balanceLedgerEntry as any).findMany({
+        where: {
+          entryType: 'RELEASE_TO_AVAILABLE',
+          reviewBatch: {
+            campaignId: {
+              in: campaigns.map((campaign) => campaign.id),
+            },
+          },
+        },
+        include: {
+          reviewBatch: {
+            select: {
+              campaignId: true,
+            },
+          },
+        },
+      });
+      const releasedSpendByCampaignId = new Map<string, number>();
+      for (const entry of releasedEntries) {
+        const campaignId = entry.reviewBatch?.campaignId;
+        if (!campaignId) continue;
+        releasedSpendByCampaignId.set(campaignId, (releasedSpendByCampaignId.get(campaignId) ?? 0) + Number(entry.amount ?? 0));
+      }
+
       return reply.send({
         ok: true,
-        campaigns: campaigns.map((campaign) => serializeCampaignForDev(campaign, now)),
+        campaigns: campaigns
+          .map((campaign) => ({
+            ...campaign,
+            remainingBudget: Math.max(Number(campaign.totalBudget ?? 0) - (releasedSpendByCampaignId.get(campaign.id) ?? 0), 0),
+          }))
+          .filter((campaign) => Number(campaign.remainingBudget ?? 0) > 0)
+          .map((campaign) => serializeCampaignForDev(campaign, now)),
       });
     } catch (err: any) {
       return reply.code(400).send({ error: err.message });

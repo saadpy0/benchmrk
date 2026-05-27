@@ -14,20 +14,30 @@ async function getVerifiedSpendByCampaignIds(campaignIds: string[]) {
     return new Map<string, number>();
   }
 
-  const grouped = await ((prisma as any).submissionReviewBatch).groupBy({
-    by: ['campaignId'],
+  const entries = await (prisma.balanceLedgerEntry as any).findMany({
     where: {
-      campaignId: { in: campaignIds },
-      status: 'VERIFIED',
+      entryType: 'RELEASE_TO_AVAILABLE',
+      reviewBatch: {
+        campaignId: { in: campaignIds },
+      },
     },
-    _sum: {
-      grossAmount: true,
+    include: {
+      reviewBatch: {
+        select: {
+          campaignId: true,
+        },
+      },
     },
   });
 
-  return new Map<string, number>(
-    grouped.map((item: any) => [item.campaignId, Number(item?._sum?.grossAmount ?? 0)]),
-  );
+  const totals = new Map<string, number>();
+  for (const entry of entries) {
+    const campaignId = entry.reviewBatch?.campaignId;
+    if (!campaignId) continue;
+    totals.set(campaignId, (totals.get(campaignId) ?? 0) + Number(entry.amount ?? 0));
+  }
+
+  return totals;
 }
 
 type CreatorAuthResult = {
@@ -227,7 +237,7 @@ export async function listCreatorPortalCampaigns() {
       sweepEligibleAt,
       isSweepEligible: now.getTime() >= sweepEligibleAt.getTime(),
     };
-  });
+  }).filter((campaign) => campaign.remainingBudget > 0);
 }
 
 async function ensureCreatorCanSubmitToCampaign(userId: string, campaignId: string) {
@@ -241,6 +251,10 @@ async function ensureCreatorCanSubmitToCampaign(userId: string, campaignId: stri
   const creatorProfile = profile ?? await ensureCreatorProfile(user.id, user.email);
   if (!campaign) throw new Error('Campaign not found');
   if (campaign.status !== 'LIVE') throw new Error('Campaign is not live');
+
+  const releasedSpendByCampaignId = await getVerifiedSpendByCampaignIds([campaign.id]);
+  const remainingBudget = Math.max(Number(campaign.totalBudget ?? 0) - (releasedSpendByCampaignId.get(campaign.id) ?? 0), 0);
+  if (remainingBudget <= 0) throw new Error('Campaign budget is exhausted');
 
   await prisma.application.upsert({
     where: {
@@ -279,15 +293,24 @@ function computeSubmissionFinancials(submission: any) {
   const grossCurrentValue = latestViews * cpvRate;
   const cap = Number(submission.campaign.maxPayoutPerSubmission ?? 0);
   const projectedValue = cap > 0 ? Math.min(grossCurrentValue, cap) : grossCurrentValue;
-  const settledAmount = (submission.reviewBatches ?? []).reduce((sum: number, batch: any) => {
+  const resolvedAmount = (submission.reviewBatches ?? []).reduce((sum: number, batch: any) => {
     return batch.status === 'VERIFIED' ? sum + Number(batch.grossAmount ?? 0) : sum;
   }, 0);
-  const pendingAmount = Math.max(projectedValue - settledAmount, 0);
+  const releasedAmount = (submission.reviewBatches ?? []).reduce((sum: number, batch: any) => {
+    if (batch.status !== 'VERIFIED') {
+      return sum;
+    }
+    return sum + (batch.ledgerEntries ?? []).reduce((entrySum: number, entry: any) => {
+      return entry.entryType === 'RELEASE_TO_AVAILABLE' ? entrySum + Number(entry.amount ?? 0) : entrySum;
+    }, 0);
+  }, 0);
+  const pendingAmount = Math.max(projectedValue - resolvedAmount, 0);
 
   return {
     latestViews,
     projectedValue,
-    settledAmount,
+    settledAmount: resolvedAmount,
+    releasedAmount,
     pendingAmount,
   };
 }
@@ -339,6 +362,15 @@ export async function getCreatorPortalDashboard(userId: string) {
           select: {
             grossAmount: true,
             status: true,
+            ledgerEntries: {
+              where: {
+                entryType: 'RELEASE_TO_AVAILABLE',
+              },
+              select: {
+                entryType: true,
+                amount: true,
+              },
+            },
           },
         },
       },
@@ -401,7 +433,7 @@ export async function getCreatorPortalDashboard(userId: string) {
       remainingBudget: Number(remainingBudget),
       minimumIncrementalViewsPerSweep: Number(submission.campaign.minimumPayoutViews ?? 0),
       projectedValue: Number(financials.projectedValue.toFixed(2)),
-      withdrawableAmount: Number(financials.settledAmount.toFixed(2)),
+      withdrawableAmount: Number(financials.releasedAmount.toFixed(2)),
       pendingAmount: Number(financials.pendingAmount.toFixed(2)),
     };
   });

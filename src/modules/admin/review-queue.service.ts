@@ -14,7 +14,7 @@ const ReviewBatchStatus = {
   MORE_INFO_REQUESTED: 'MORE_INFO_REQUESTED',
 } as const;
 
-type ReviewBatchAction = 'VERIFY' | 'REJECT' | 'REQUEST_MORE_INFO';
+type ReviewBatchAction = 'VERIFY' | 'REJECT' | 'REQUEST_MORE_INFO' | 'PARTIAL_VERIFY';
 
 function toNumber(value: unknown) {
   return Number(value ?? 0);
@@ -80,6 +80,44 @@ async function getLockedAmountSoFar(submissionId: string) {
   return Number(aggregate?._sum?.grossAmount ?? 0);
 }
 
+async function getCampaignCommittedAmount(campaignId: string, input?: { excludeBatchId?: string }) {
+  const batches = await ((prisma as any).submissionReviewBatch).findMany({
+    where: {
+      campaignId,
+      ...(input?.excludeBatchId ? { id: { not: input.excludeBatchId } } : {}),
+      status: {
+        in: [ReviewBatchStatus.PENDING_REVIEW, ReviewBatchStatus.MORE_INFO_REQUESTED, ReviewBatchStatus.VERIFIED],
+      },
+    },
+    include: {
+      ledgerEntries: {
+        where: {
+          entryType: 'RELEASE_TO_AVAILABLE',
+        },
+        orderBy: [{ createdAt: 'desc' }],
+        take: 1,
+      },
+    },
+  });
+
+  return batches.reduce((sum: number, batch: any) => {
+    if (batch.status === ReviewBatchStatus.VERIFIED) {
+      return sum + Number(batch.ledgerEntries?.[0]?.amount ?? batch.grossAmount ?? 0);
+    }
+    return sum + Number(batch.grossAmount ?? 0);
+  }, 0);
+}
+
+async function getCampaignBudgetState(campaignId: string, totalBudget: unknown, input?: { excludeBatchId?: string }) {
+  const committedAmount = await getCampaignCommittedAmount(campaignId, input);
+  const total = Number(totalBudget ?? 0);
+  return {
+    totalBudget: total,
+    committedAmount,
+    remainingBudget: Math.max(total - committedAmount, 0),
+  };
+}
+
 export async function runSubmissionReviewSweep(input?: { campaignId?: string }) {
   const now = new Date();
   const campaigns = await (prisma.campaign as any).findMany({
@@ -106,6 +144,9 @@ export async function runSubmissionReviewSweep(input?: { campaignId?: string }) 
       continue;
     }
 
+    const budgetState = await getCampaignBudgetState(campaign.id, campaign.totalBudget);
+    let remainingCampaignBudget = budgetState.remainingBudget;
+
     const submissions = await (prisma.contentSubmission as any).findMany({
       where: {
         campaignId: campaign.id,
@@ -123,6 +164,11 @@ export async function runSubmissionReviewSweep(input?: { campaignId?: string }) 
     const skippedSubmissionIds: string[] = [];
 
     for (const submission of submissions) {
+      if (remainingCampaignBudget <= 0) {
+        skippedSubmissionIds.push(submission.id);
+        continue;
+      }
+
       const existingBatch = await ((prisma as any).submissionReviewBatch).findUnique({
         where: {
           submissionId_cycleNumber: {
@@ -204,6 +250,7 @@ export async function runSubmissionReviewSweep(input?: { campaignId?: string }) 
         return createdBatch;
       });
       createdBatchIds.push(batch.id);
+      remainingCampaignBudget = Math.max(remainingCampaignBudget - Number(batch.grossAmount ?? 0), 0);
     }
 
     results.push({
@@ -294,17 +341,31 @@ export async function getSubmissionReviewBatchDetails(batchId: string) {
   }
 
   const tracking = await getSubmissionTrackingForAdmin(batch.submissionId);
-  return { batch, tracking };
+  const budgetState = await getCampaignBudgetState(batch.campaignId, batch.campaign.totalBudget, { excludeBatchId: batch.id });
+  return {
+    batch,
+    tracking,
+    budget: {
+      totalBudget: budgetState.totalBudget,
+      committedAmountExcludingCurrent: budgetState.committedAmount,
+      remainingBudgetForBatch: budgetState.remainingBudget,
+      requestedAmount: Number(batch.grossAmount ?? 0),
+      isUnderfunded: budgetState.remainingBudget > 0 && budgetState.remainingBudget < Number(batch.grossAmount ?? 0),
+      isExhausted: budgetState.remainingBudget <= 0,
+    },
+  };
 }
 
 export async function updateSubmissionReviewBatch(input: {
   batchId: string;
   action: ReviewBatchAction;
   note?: string;
+  amount?: number;
 }) {
   const batch = await ((prisma as any).submissionReviewBatch).findUnique({
     where: { id: input.batchId },
     include: {
+      campaign: true,
       submission: true,
     },
   });
@@ -313,10 +374,24 @@ export async function updateSubmissionReviewBatch(input: {
     throw new Error('Review batch not found');
   }
 
-  if (input.action === 'VERIFY') {
+  if (batch.status === ReviewBatchStatus.VERIFIED || batch.status === ReviewBatchStatus.REJECTED) {
+    throw new Error('This review batch has already been finalized');
+  }
+
+  const budgetState = await getCampaignBudgetState(batch.campaignId, batch.campaign.totalBudget, { excludeBatchId: batch.id });
+  const maxPayableAmount = Math.min(Number(batch.grossAmount ?? 0), budgetState.remainingBudget);
+
+  const resolveVerifiedPayout = async (payoutAmount: number, mode: 'full' | 'partial') => {
+    if (payoutAmount <= 0) {
+      throw new Error('No remaining campaign budget is available for this payout');
+    }
+
     return prisma.$transaction(async (tx) => {
       const wallet = await ensureCreatorWallet(tx, batch.submission.creatorId);
       const pendingEntry = await getPendingLedgerEntryForBatch(tx, batch.id);
+      const pendingAmount = Number(pendingEntry?.amount ?? batch.grossAmount ?? 0);
+      const reversedAmount = Math.max(pendingAmount - payoutAmount, 0);
+
       if (pendingEntry?.status === 'PENDING') {
         await tx.creatorWallet.update({
           where: { id: wallet.id },
@@ -330,16 +405,33 @@ export async function updateSubmissionReviewBatch(input: {
           data: {
             status: 'RELEASED',
             releasedAt: new Date(),
-            notes: input.note ?? 'Pending review batch earnings released to available balance',
+            notes: mode === 'partial'
+              ? (input.note ?? ('Pending batch resolved with partial payout of ₹' + payoutAmount.toFixed(2) + ' and reversal of ₹' + reversedAmount.toFixed(2)))
+              : (input.note ?? 'Pending review batch earnings released to available balance'),
           },
         });
+
+        if (reversedAmount > 0) {
+          await (tx.balanceLedgerEntry as any).create({
+            data: {
+              walletId: wallet.id,
+              submissionId: batch.submissionId,
+              reviewBatchId: batch.id,
+              entryType: 'REVERSAL',
+              status: 'CANCELLED',
+              amount: new Decimal(reversedAmount),
+              releasedAt: new Date(),
+              notes: 'Unpaid review batch remainder reversed because campaign budget could not cover the full amount',
+            },
+          });
+        }
       }
 
       await tx.creatorWallet.update({
         where: { id: wallet.id },
         data: {
-          availableBalance: { increment: batch.grossAmount },
-          lifetimeEarned: { increment: batch.grossAmount },
+          availableBalance: { increment: new Decimal(payoutAmount) },
+          lifetimeEarned: { increment: new Decimal(payoutAmount) },
         },
       });
 
@@ -350,9 +442,11 @@ export async function updateSubmissionReviewBatch(input: {
           reviewBatchId: batch.id,
           entryType: 'RELEASE_TO_AVAILABLE',
           status: 'AVAILABLE',
-          amount: batch.grossAmount,
+          amount: new Decimal(payoutAmount),
           releasedAt: new Date(),
-          notes: input.note ?? 'Submission review batch verified by admin',
+          notes: mode === 'partial'
+            ? (input.note ?? ('Submission review batch partially verified by admin for ₹' + payoutAmount.toFixed(2)))
+            : (input.note ?? 'Submission review batch verified by admin'),
         },
       });
 
@@ -368,12 +462,37 @@ export async function updateSubmissionReviewBatch(input: {
         where: { id: batch.id },
         data: {
           status: ReviewBatchStatus.VERIFIED,
-          adminNotes: input.note ?? null,
+          adminNotes: mode === 'partial'
+            ? ((input.note ? input.note + ' ' : '') + '[Partial payout approved: ₹' + payoutAmount.toFixed(2) + ' out of ₹' + Number(batch.grossAmount ?? 0).toFixed(2) + ']')
+            : (input.note ?? null),
           moreInfoRequest: null,
           resolvedAt: new Date(),
         },
       });
     });
+  };
+
+  if (input.action === 'VERIFY') {
+    if (maxPayableAmount < Number(batch.grossAmount ?? 0)) {
+      throw new Error('Campaign does not have enough remaining budget for a full payout. Use partial payout instead.');
+    }
+
+    return resolveVerifiedPayout(Number(batch.grossAmount ?? 0), 'full');
+  }
+
+  if (input.action === 'PARTIAL_VERIFY') {
+    const amount = Number(input.amount ?? 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error('Partial payout amount must be a valid positive number');
+    }
+    if (amount > Number(batch.grossAmount ?? 0)) {
+      throw new Error('Partial payout amount cannot exceed the batch amount');
+    }
+    if (amount > maxPayableAmount) {
+      throw new Error('Partial payout amount cannot exceed the campaign remaining budget');
+    }
+
+    return resolveVerifiedPayout(amount, 'partial');
   }
 
   if (input.action === 'REQUEST_MORE_INFO') {

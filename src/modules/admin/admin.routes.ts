@@ -131,8 +131,9 @@ export async function adminRoutes(app: FastifyInstance) {
   app.patch('/admin/review-batches/:id', { preHandler: adminGuard }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = request.body as {
-      action: 'VERIFY' | 'REJECT' | 'REQUEST_MORE_INFO';
+      action: 'VERIFY' | 'REJECT' | 'REQUEST_MORE_INFO' | 'PARTIAL_VERIFY';
       note?: string;
+      amount?: number;
     };
 
     try {
@@ -140,6 +141,7 @@ export async function adminRoutes(app: FastifyInstance) {
         batchId: id,
         action: body.action,
         ...(body.note !== undefined ? { note: body.note } : {}),
+        ...(body.amount !== undefined ? { amount: body.amount } : {}),
       });
       return reply.send(batch);
     } catch (err: any) {

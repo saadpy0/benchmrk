@@ -153,9 +153,26 @@ function buildAdminReviewPage() {
             <textarea id="action-note" placeholder="Provide audit reasoning (e.g. view count validated from secondary analytics, anomalous spikes detected, etc.). Required for Reject or Request Info." class="w-full rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-xs font-medium text-slate-300 placeholder-slate-600 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none transition min-h-[110px] resize-none"></textarea>
           </div>
 
+          <div id="partial-payout-panel" class="hidden rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 space-y-2">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <div class="text-xs font-bold text-amber-300">Partial payout</div>
+                <div class="text-3xs text-slate-400" id="partial-budget-hint">Use a partial payout up to the remaining campaign budget.</div>
+              </div>
+              <span class="text-3xs font-bold uppercase tracking-wider text-amber-300" id="partial-max-pill">Max ₹0.00</span>
+            </div>
+            <div>
+              <label class="text-xs font-semibold text-slate-300" for="partial-payout-amount">Partial payout amount</label>
+              <input id="partial-payout-amount" type="number" min="0" step="0.01" placeholder="0.00" class="mt-1 w-full rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-xs font-medium text-slate-300 placeholder-slate-600 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none transition" />
+            </div>
+          </div>
+
           <div class="space-y-2 mt-auto">
             <button id="verify-btn" disabled class="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:opacity-30 disabled:hover:bg-slate-800 text-white font-bold py-3 px-4 text-xs tracking-wide shadow-lg shadow-emerald-500/10 transition active:scale-95">
               <i data-lucide="check-circle" class="h-4 w-4"></i> Verify Views & Pay Out
+            </button>
+            <button id="partial-verify-btn" disabled class="hidden w-full flex items-center justify-center gap-2 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:bg-slate-800 disabled:opacity-30 disabled:hover:bg-slate-800 text-white font-bold py-3 px-4 text-xs tracking-wide transition active:scale-95">
+              <i data-lucide="scale" class="h-4 w-4"></i> Pay Partial Amount
             </button>
             <button id="request-info-btn" disabled class="w-full flex items-center justify-center gap-2 rounded-xl border border-slate-800 bg-slate-900/50 hover:bg-slate-800 disabled:opacity-30 text-sky-400 font-bold py-3 px-4 text-xs tracking-wide transition active:scale-95">
               <i data-lucide="help-circle" class="h-4 w-4"></i> Ask for More Info
@@ -260,6 +277,8 @@ function buildAdminReviewPage() {
                   <div class="flex justify-between border-b border-slate-900/50 pb-1.5"><span class="text-slate-500">Submission Date</span> <span class="font-semibold text-slate-300" id="meta-submit-date">—</span></div>
                   <div class="flex justify-between border-b border-slate-900/50 pb-1.5"><span class="text-slate-500">Audit Range</span> <span class="font-semibold text-slate-300" id="meta-audit-range">—</span></div>
                   <div class="flex justify-between border-b border-slate-900/50 pb-1.5"><span class="text-slate-500">Earned This Batch</span> <span class="font-semibold text-emerald-400" id="meta-batch-gross">—</span></div>
+                  <div class="flex justify-between border-b border-slate-900/50 pb-1.5"><span class="text-slate-500">Campaign Budget Left</span> <span class="font-semibold text-slate-300" id="meta-budget-remaining">—</span></div>
+                  <div class="flex justify-between border-b border-slate-900/50 pb-1.5"><span class="text-slate-500">Budget Status</span> <span class="font-semibold text-slate-300" id="meta-budget-status">—</span></div>
                 </div>
                 <!-- Dynamic Video URL Box -->
                 <div class="pt-2">
@@ -346,8 +365,13 @@ function buildAdminReviewPage() {
       const selectionMeta = document.getElementById('selection-meta');
       const output = document.getElementById('output');
       const actionNote = document.getElementById('action-note');
+      const partialPayoutPanel = document.getElementById('partial-payout-panel');
+      const partialBudgetHint = document.getElementById('partial-budget-hint');
+      const partialMaxPill = document.getElementById('partial-max-pill');
+      const partialPayoutAmount = document.getElementById('partial-payout-amount');
       
       const verifyBtn = document.getElementById('verify-btn');
+      const partialVerifyBtn = document.getElementById('partial-verify-btn');
       const rejectBtn = document.getElementById('reject-btn');
       const requestInfoBtn = document.getElementById('request-info-btn');
       const runSweepBtn = document.getElementById('run-sweep-btn');
@@ -365,6 +389,7 @@ function buildAdminReviewPage() {
       let authToken = '';
       let queueItems = [];
       let selectedBatchId = '';
+      let selectedBatchBudget = null;
       let activeTab = 'analytics';
       let metricsChartInstance = null;
 
@@ -402,6 +427,10 @@ function buildAdminReviewPage() {
         return typeof value === 'number' ? value.toLocaleString() : Number(value || 0).toLocaleString();
       }
 
+      function formatMoney(value) {
+        return '$' + Number(value || 0).toFixed(2);
+      }
+
       function escapeHtml(value) {
         return String(value ?? '')
           .replace(/&/g, '&amp;')
@@ -422,9 +451,22 @@ function buildAdminReviewPage() {
         selectedBatchId = batchId || '';
         const disabled = !selectedBatchId;
         verifyBtn.disabled = disabled;
+        partialVerifyBtn.disabled = true;
         rejectBtn.disabled = disabled;
         requestInfoBtn.disabled = disabled;
         renderQueue(queueItems);
+      }
+
+      function resetPartialPayoutState() {
+        selectedBatchBudget = null;
+        partialPayoutPanel.classList.add('hidden');
+        partialVerifyBtn.classList.remove('hidden');
+        partialVerifyBtn.disabled = true;
+        partialPayoutAmount.value = '';
+        partialPayoutAmount.removeAttribute('max');
+        partialPayoutAmount.removeAttribute('min');
+        partialBudgetHint.textContent = 'Use a partial payout up to the remaining campaign budget.';
+        partialMaxPill.textContent = 'Max ₹0.00';
       }
 
       function renderRaw(data) {
@@ -553,6 +595,7 @@ function buildAdminReviewPage() {
           detailEmptyState.classList.remove('hidden');
           detailActiveState.classList.add('hidden');
           selectionMeta.textContent = 'Select a submission';
+          resetPartialPayoutState();
           return;
         }
 
@@ -561,6 +604,7 @@ function buildAdminReviewPage() {
 
         const batch = data.batch;
         const tracking = data.tracking || {};
+        const budget = data.budget || {};
         const submission = tracking.submission || {};
         const reviewSignals = tracking.reviewSignals || {};
         const snapshots = tracking.snapshots || [];
@@ -603,12 +647,35 @@ function buildAdminReviewPage() {
         document.getElementById('meta-creator-name').textContent = submission.creator?.displayName || batch.submission?.creator?.displayName || '—';
         document.getElementById('meta-submit-date').textContent = formatDate(submission.createdAt || batch.submission?.createdAt);
         document.getElementById('meta-audit-range').innerHTML = formatNumber(batch.lockedFromViews) + ' &rarr; ' + formatNumber(batch.lockedToViews);
-        document.getElementById('meta-batch-gross').textContent = '$' + Number(batch.grossAmount).toFixed(2);
+        document.getElementById('meta-batch-gross').textContent = formatMoney(batch.grossAmount);
+        document.getElementById('meta-budget-remaining').textContent = formatMoney(budget.remainingBudgetForBatch || 0);
+        document.getElementById('meta-budget-status').textContent = budget.isExhausted
+          ? 'Exhausted'
+          : budget.isUnderfunded
+            ? 'Underfunded'
+            : 'Covered';
         
         const videoAnchor = document.getElementById('meta-video-url');
         const videoUrl = submission.contentUrl || batch.submission?.contentUrl || '#';
         videoAnchor.href = videoUrl;
         videoAnchor.textContent = videoUrl;
+
+        resetPartialPayoutState();
+        if (batch.status === 'PENDING_REVIEW') {
+          selectedBatchBudget = budget;
+          partialPayoutPanel.classList.remove('hidden');
+          partialVerifyBtn.disabled = Number(budget.remainingBudgetForBatch || 0) <= 0;
+          partialPayoutAmount.value = Number(Math.min(Number(budget.remainingBudgetForBatch || 0), Number(budget.requestedAmount || 0))).toFixed(2);
+          partialPayoutAmount.min = '0.01';
+          partialPayoutAmount.max = String(Number(budget.remainingBudgetForBatch || 0).toFixed(2));
+          partialBudgetHint.textContent = budget.isUnderfunded
+            ? 'Requested ' + formatMoney(budget.requestedAmount || 0) + ' but only ' + formatMoney(budget.remainingBudgetForBatch || 0) + ' remains in this campaign.'
+            : budget.isExhausted
+              ? 'This campaign has no remaining budget, so no partial payout can be made.'
+              : 'Requested ' + formatMoney(budget.requestedAmount || 0) + '. You can partially release any amount up to ' + formatMoney(budget.remainingBudgetForBatch || 0) + '.';
+          partialMaxPill.textContent = 'Max ' + formatMoney(budget.remainingBudgetForBatch || 0);
+          verifyBtn.disabled = false;
+        }
 
         // Populate Tab 2: Signals
         document.getElementById('rec-conf-val').textContent = confidence + '%';
@@ -819,15 +886,35 @@ function buildAdminReviewPage() {
       async function runAction(action) {
         if (!selectedBatchId) return;
         const note = actionNote.value.trim();
+        const body = note ? { action, note } : { action };
         
         if ((action === 'REJECT' || action === 'REQUEST_MORE_INFO') && !note) {
           alert('Ledger audit note is required when rejecting or requesting additional information!');
           return;
         }
 
+        if (action === 'PARTIAL_VERIFY') {
+          const amount = Number(partialPayoutAmount.value || 0);
+          const max = Number(selectedBatchBudget?.remainingBudgetForBatch || 0);
+          const requested = Number(selectedBatchBudget?.requestedAmount || 0);
+          if (!Number.isFinite(amount) || amount <= 0) {
+            alert('Enter a valid partial payout amount first.');
+            return;
+          }
+          if (amount > max) {
+            alert('Partial payout cannot exceed the remaining campaign budget.');
+            return;
+          }
+          if (amount > requested) {
+            alert('Partial payout cannot exceed the requested batch amount.');
+            return;
+          }
+          body.amount = amount;
+        }
+
         await api('/admin/review-batches/' + encodeURIComponent(selectedBatchId), {
           method: 'PATCH',
-          body: JSON.stringify(note ? { action, note } : { action }),
+          body: JSON.stringify(body),
         });
         actionNote.value = '';
         await loadQueue();
@@ -856,6 +943,13 @@ function buildAdminReviewPage() {
       verifyBtn.addEventListener('click', () => {
         if (confirm('Are you sure you want to verify views up until this snapshot and execute ledger payout? This will credit the creator balance wallet.')) {
           runAction('VERIFY').catch(handleError);
+        }
+      });
+
+      partialVerifyBtn.addEventListener('click', () => {
+        const amount = Number(partialPayoutAmount.value || 0);
+        if (confirm('Approve a partial payout of ' + formatMoney(amount) + ' for this batch?')) {
+          runAction('PARTIAL_VERIFY').catch(handleError);
         }
       });
       
