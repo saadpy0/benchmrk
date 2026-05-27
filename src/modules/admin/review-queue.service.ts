@@ -2,8 +2,11 @@ import { Decimal } from '@prisma/client/runtime/library.js';
 import { prisma } from '../../lib/prisma.js';
 import { getSubmissionTrackingForAdmin } from '../campaigns/submission-tracking.service.js';
 
-const REVIEW_CYCLE_DAYS = 15;
-const REVIEW_CYCLE_MS = REVIEW_CYCLE_DAYS * 24 * 60 * 60 * 1000;
+const PRODUCTION_SWEEP_INTERVAL_DAYS = 7;
+const TESTING_SWEEP_INTERVAL_MINUTES = 10;
+const SWEEP_INTERVAL_MS = process.env.NODE_ENV === 'production'
+  ? PRODUCTION_SWEEP_INTERVAL_DAYS * 24 * 60 * 60 * 1000
+  : TESTING_SWEEP_INTERVAL_MINUTES * 60 * 1000;
 const ReviewBatchStatus = {
   PENDING_REVIEW: 'PENDING_REVIEW',
   VERIFIED: 'VERIFIED',
@@ -17,16 +20,16 @@ function toNumber(value: unknown) {
   return Number(value ?? 0);
 }
 
-function getCurrentCycleNumber(campaignStartDate: Date, now: Date) {
+function getCurrentSweepNumber(campaignStartDate: Date, now: Date) {
   const elapsed = now.getTime() - campaignStartDate.getTime();
-  if (elapsed < REVIEW_CYCLE_MS) {
+  if (elapsed < SWEEP_INTERVAL_MS) {
     return 0;
   }
-  return Math.floor(elapsed / REVIEW_CYCLE_MS);
+  return Math.floor(elapsed / SWEEP_INTERVAL_MS);
 }
 
-function getCycleOpenedAt(campaignStartDate: Date, cycleNumber: number) {
-  return new Date(campaignStartDate.getTime() + cycleNumber * REVIEW_CYCLE_MS);
+function getSweepOpenedAt(campaignStartDate: Date, cycleNumber: number) {
+  return new Date(campaignStartDate.getTime() + cycleNumber * SWEEP_INTERVAL_MS);
 }
 
 async function getLatestSnapshot(submissionId: string) {
@@ -79,7 +82,7 @@ export async function runSubmissionReviewSweep(input?: { campaignId?: string }) 
   }> = [];
 
   for (const campaign of campaigns) {
-    const cycleNumber = getCurrentCycleNumber(new Date(campaign.startDate), now);
+    const cycleNumber = getCurrentSweepNumber(new Date(campaign.startDate), now);
     if (cycleNumber <= 0) {
       results.push({ campaignId: campaign.id, cycleNumber, createdBatchIds: [], skippedSubmissionIds: [] });
       continue;
@@ -117,14 +120,14 @@ export async function runSubmissionReviewSweep(input?: { campaignId?: string }) 
 
       const latestSnapshot = submission.metricSnapshots?.[0] ?? await getLatestSnapshot(submission.id);
       const latestViews = latestSnapshot ? toNumber(latestSnapshot.viewCount) : 0;
-      if (latestViews < toNumber(campaign.minimumPayoutViews)) {
-        skippedSubmissionIds.push(submission.id);
-        continue;
-      }
 
       const latestBatch = await getLatestReviewBatch(submission.id);
       const lockedFromViews = latestBatch ? toNumber(latestBatch.lockedToViews) : 0;
       const incrementalViews = Math.max(latestViews - lockedFromViews, 0);
+      if (incrementalViews < toNumber(campaign.minimumPayoutViews)) {
+        skippedSubmissionIds.push(submission.id);
+        continue;
+      }
       if (incrementalViews <= 0) {
         skippedSubmissionIds.push(submission.id);
         continue;
@@ -150,7 +153,7 @@ export async function runSubmissionReviewSweep(input?: { campaignId?: string }) 
           submissionId: submission.id,
           campaignId: campaign.id,
           cycleNumber,
-          windowOpenedAt: getCycleOpenedAt(new Date(campaign.startDate), cycleNumber),
+          windowOpenedAt: getSweepOpenedAt(new Date(campaign.startDate), cycleNumber),
           lockedFromViews,
           lockedToViews: latestViews,
           incrementalViews,
@@ -225,7 +228,10 @@ export async function getSubmissionReviewQueue(input?: {
     }),
   );
 
-  return enriched;
+  return enriched.filter(({ batch }: any) => {
+    const threshold = toNumber(batch?.campaign?.minimumPayoutViews);
+    return toNumber(batch?.incrementalViews) >= threshold;
+  });
 }
 
 export async function getSubmissionReviewBatchDetails(batchId: string) {

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { authenticate } from '../../middleware/auth.js';
 import { submitContent, getMySubmissions } from './submission.service.js';
-import { getSubmissionTracking, processDueTrackingJobs, trackSubmissionNow } from './submission-tracking.service.js';
+import { getSubmissionTracking, processDueTrackingJobs, stopSubmissionAnalysis, trackSubmissionNow } from './submission-tracking.service.js';
 
 
 export async function submissionRoutes(app: FastifyInstance) {
@@ -61,6 +61,21 @@ export async function submissionRoutes(app: FastifyInstance) {
     try {
       const result = await trackSubmissionNow(request.user.userId, submissionId);
       return reply.send(result);
+    } catch (err: any) {
+      return reply.code(400).send({ error: err.message });
+    }
+  });
+
+  app.post('/my/submissions/:submissionId/stop-analysis', { preHandler: authenticate }, async (request, reply) => {
+    if (request.user.role !== 'CREATOR') {
+      return reply.code(403).send({ error: 'Only creators can stop tracking for their submissions' });
+    }
+
+    const { submissionId } = request.params as { submissionId: string };
+
+    try {
+      const tracking = await stopSubmissionAnalysis(request.user.userId, submissionId);
+      return reply.send(tracking);
     } catch (err: any) {
       return reply.code(400).send({ error: err.message });
     }

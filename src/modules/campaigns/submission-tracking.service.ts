@@ -1,9 +1,18 @@
 import { Platform, SubmissionStatus } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 
+const TESTING_TRACKING_INTERVAL_MINUTES = 5;
+const TESTING_TRACKING_WINDOW_MINUTES = 120;
+const TESTING_TRACKING_SCHEDULE_OFFSETS_MINUTES = Array.from(
+  { length: Math.floor(TESTING_TRACKING_WINDOW_MINUTES / TESTING_TRACKING_INTERVAL_MINUTES) + 1 },
+  (_, index) => index * TESTING_TRACKING_INTERVAL_MINUTES,
+);
 const DEFAULT_TRACKING_SCHEDULE_OFFSETS_MINUTES = [0, 300, 600, 900, 1200, 1800, 2400, 3000, 3600, 4320, 5040, 5760, 6480, 7200];
-const ROLLING_TRACKING_EXTENSION_MINUTES = 720;
-const ROLLING_TRACKING_START_AFTER_MINUTES = DEFAULT_TRACKING_SCHEDULE_OFFSETS_MINUTES[DEFAULT_TRACKING_SCHEDULE_OFFSETS_MINUTES.length - 1] ?? 7200;
+const FALLBACK_TRACKING_SCHEDULE_OFFSETS_MINUTES = process.env.NODE_ENV === 'production'
+  ? DEFAULT_TRACKING_SCHEDULE_OFFSETS_MINUTES
+  : TESTING_TRACKING_SCHEDULE_OFFSETS_MINUTES;
+const ROLLING_TRACKING_EXTENSION_MINUTES = process.env.NODE_ENV === 'production' ? 720 : TESTING_TRACKING_INTERVAL_MINUTES;
+const ROLLING_TRACKING_START_AFTER_MINUTES = FALLBACK_TRACKING_SCHEDULE_OFFSETS_MINUTES[FALLBACK_TRACKING_SCHEDULE_OFFSETS_MINUTES.length - 1] ?? 7200;
 const DEFAULT_MAX_DUE_JOBS = 10;
 const MAX_TRACKING_ATTEMPTS = 3;
 const INSTAGRAM_MEDIA_PAGE_LIMIT = 50;
@@ -116,7 +125,7 @@ function getTrackingScheduleOffsetsMinutes() {
     }
   }
 
-  return DEFAULT_TRACKING_SCHEDULE_OFFSETS_MINUTES;
+  return FALLBACK_TRACKING_SCHEDULE_OFFSETS_MINUTES;
 }
 
 function normalizeUrlForComparison(value: string) {
@@ -369,7 +378,7 @@ async function fetchInstagramSubmissionMetrics(input: {
 
   const accessToken = connectedAccount?.accessToken;
   if (!accessToken) {
-    return fetchInstagramSubmissionMetricsPublic(input.contentUrl);
+    throw new Error('Connect your Instagram professional account before tracking Instagram submissions');
   }
 
   const targetUrl = normalizeUrlForComparison(input.contentUrl);
@@ -421,7 +430,7 @@ async function fetchInstagramSubmissionMetrics(input: {
     if (!nextPage || media.length === 0) break;
   }
 
-  return fetchInstagramSubmissionMetricsPublic(input.contentUrl);
+  throw new Error('Submitted Instagram URL was not found in your connected Instagram account media');
 }
 
 export async function trackContentUrlMetrics(input: {
