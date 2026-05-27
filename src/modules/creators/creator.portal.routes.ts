@@ -41,7 +41,9 @@ const page = String.raw`<!doctype html>
       .toolbar button { width: auto; padding: 10px 14px; }
       .list { display: grid; gap: 12px; margin-top: 14px; }
       .campaign-item, .submission-item { border: 1px solid #1e293b; border-radius: 16px; padding: 14px; background: rgba(15, 23, 42, 0.72); }
+      .history-item { border: 1px solid #1e293b; border-radius: 16px; padding: 14px; background: rgba(15, 23, 42, 0.72); }
       .campaign-meta, .submission-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 12px; }
+      .history-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 12px; }
       .meta-block { background: rgba(2, 6, 23, 0.55); border: 1px solid #1e293b; border-radius: 12px; padding: 10px; }
       .meta-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #94a3b8; }
       .meta-value { margin-top: 5px; font-weight: 600; }
@@ -112,6 +114,10 @@ const page = String.raw`<!doctype html>
               <div class="value" id="withdrawable-amount">₹0</div>
             </div>
             <div class="meta-block">
+              <div class="meta-label">Lifetime Earned</div>
+              <div class="value" id="lifetime-earned">₹0</div>
+            </div>
+            <div class="meta-block">
               <div class="meta-label">Submissions</div>
               <div class="value" id="submission-count">0</div>
             </div>
@@ -178,6 +184,16 @@ const page = String.raw`<!doctype html>
             </div>
           </div>
           <div id="submission-list" class="list"></div>
+        </section>
+
+        <section class="card" style="margin-top: 16px;">
+          <div class="panel-title">
+            <div>
+              <h3>Wallet / Account History</h3>
+              <p class="muted">Only finalized money movements are shown here: when money becomes withdrawable, and later when money is actually withdrawn.</p>
+            </div>
+          </div>
+          <div id="wallet-history-list" class="list"></div>
         </section>
       </section>
 
@@ -316,6 +332,38 @@ const page = String.raw`<!doctype html>
         }).join('');
       }
 
+      function renderWalletHistory(entries) {
+        const container = document.getElementById('wallet-history-list');
+        if (!Array.isArray(entries) || entries.length === 0) {
+          container.innerHTML = '<div class="history-item"><div class="muted">No finalized wallet history yet.</div></div>';
+          return;
+        }
+
+        container.innerHTML = entries.map((entry) => {
+          const title = entry.entryType === 'WITHDRAWAL'
+            ? 'Withdrawal completed'
+            : 'Money became withdrawable';
+          const when = entry.releasedAt || entry.createdAt;
+          const submissionText = entry.submission
+            ? (entry.submission.campaignTitle || 'Campaign') + ' • ' + entry.submission.platform
+            : 'Wallet-level entry';
+
+          return [
+            '<div class="history-item">',
+            '<div class="panel-title"><strong>' + title + '</strong><span class="status">' + entry.status + '</span></div>',
+            '<div class="history-meta">',
+            '<div class="meta-block"><div class="meta-label">Amount</div><div class="meta-value">' + formatCurrency(entry.amount) + '</div></div>',
+            '<div class="meta-block"><div class="meta-label">Type</div><div class="meta-value">' + entry.entryType + '</div></div>',
+            '<div class="meta-block"><div class="meta-label">When</div><div class="meta-value">' + formatDate(when) + '</div></div>',
+            '<div class="meta-block"><div class="meta-label">Source</div><div class="meta-value">' + submissionText + '</div></div>',
+            '</div>',
+            (entry.submission?.contentUrl ? '<div class="tiny" style="margin-top: 10px;"><a href="' + entry.submission.contentUrl + '" target="_blank" rel="noreferrer">' + entry.submission.contentUrl + '</a></div>' : ''),
+            (entry.notes ? '<div class="footer-note">' + entry.notes + '</div>' : ''),
+            '</div>'
+          ].join('');
+        }).join('');
+      }
+
       function renderDashboard(data) {
         dashboardData = data;
         document.getElementById('creator-name').textContent = data.creator.displayName + ' Dashboard';
@@ -323,6 +371,7 @@ const page = String.raw`<!doctype html>
         document.getElementById('creator-kyc').textContent = 'KYC: ' + data.creator.kycStatus;
         document.getElementById('pending-amount').textContent = formatCurrency(data.summary.pendingAmount);
         document.getElementById('withdrawable-amount').textContent = formatCurrency(data.summary.withdrawableAmount);
+        document.getElementById('lifetime-earned').textContent = formatCurrency(data.summary.lifetimeEarned);
         document.getElementById('submission-count').textContent = formatNumber(data.summary.totalSubmissions);
         document.getElementById('tracked-views').textContent = formatNumber(data.summary.totalLatestViews);
         document.getElementById('dashboard-note').textContent = 'Projected value: ' + formatCurrency(data.summary.totalProjectedValue) + ' • Reputation score: ' + Number(data.creator.reputationScore || 0).toFixed(2);
@@ -332,6 +381,7 @@ const page = String.raw`<!doctype html>
           : 'Instagram not connected yet. Connect your professional account before submitting Instagram videos.';
         renderCampaigns(data.campaigns);
         renderSubmissions(data.submissions);
+        renderWalletHistory(data.walletHistory);
       }
 
       window.addEventListener('message', async (event) => {

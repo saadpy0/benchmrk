@@ -32,6 +32,24 @@ function getSweepOpenedAt(campaignStartDate: Date, cycleNumber: number) {
   return new Date(campaignStartDate.getTime() + cycleNumber * SWEEP_INTERVAL_MS);
 }
 
+async function ensureCreatorWallet(tx: any, creatorId: string) {
+  return tx.creatorWallet.upsert({
+    where: { creatorId },
+    update: {},
+    create: { creatorId },
+  });
+}
+
+async function getPendingLedgerEntryForBatch(tx: any, reviewBatchId: string) {
+  return (tx.balanceLedgerEntry as any).findFirst({
+    where: {
+      reviewBatchId,
+      entryType: 'ACCRUAL_PENDING',
+    },
+    orderBy: [{ createdAt: 'desc' }],
+  });
+}
+
 async function getLatestSnapshot(submissionId: string) {
   return (prisma.metricSnapshot as any).findFirst({
     where: { submissionId },
@@ -148,18 +166,42 @@ export async function runSubmissionReviewSweep(input?: { campaignId?: string }) 
         continue;
       }
 
-      const batch = await ((prisma as any).submissionReviewBatch).create({
-        data: {
-          submissionId: submission.id,
-          campaignId: campaign.id,
-          cycleNumber,
-          windowOpenedAt: getSweepOpenedAt(new Date(campaign.startDate), cycleNumber),
-          lockedFromViews,
-          lockedToViews: latestViews,
-          incrementalViews,
-          grossAmount: new Decimal(grossAmount),
-          status: ReviewBatchStatus.PENDING_REVIEW,
-        },
+      const batch = await prisma.$transaction(async (tx) => {
+        const createdBatch = await ((tx as any).submissionReviewBatch).create({
+          data: {
+            submissionId: submission.id,
+            campaignId: campaign.id,
+            cycleNumber,
+            windowOpenedAt: getSweepOpenedAt(new Date(campaign.startDate), cycleNumber),
+            lockedFromViews,
+            lockedToViews: latestViews,
+            incrementalViews,
+            grossAmount: new Decimal(grossAmount),
+            status: ReviewBatchStatus.PENDING_REVIEW,
+          },
+        });
+
+        const wallet = await ensureCreatorWallet(tx, submission.creatorId);
+        await tx.creatorWallet.update({
+          where: { id: wallet.id },
+          data: {
+            pendingBalance: { increment: createdBatch.grossAmount },
+          },
+        });
+
+        await (tx.balanceLedgerEntry as any).create({
+          data: {
+            walletId: wallet.id,
+            submissionId: submission.id,
+            reviewBatchId: createdBatch.id,
+            entryType: 'ACCRUAL_PENDING',
+            status: 'PENDING',
+            amount: createdBatch.grossAmount,
+            notes: 'Pending earnings created for submission review batch',
+          },
+        });
+
+        return createdBatch;
       });
       createdBatchIds.push(batch.id);
     }
@@ -244,7 +286,6 @@ export async function getSubmissionReviewBatchDetails(batchId: string) {
           creator: true,
         },
       },
-      ledgerEntries: true,
     },
   });
 
@@ -274,11 +315,26 @@ export async function updateSubmissionReviewBatch(input: {
 
   if (input.action === 'VERIFY') {
     return prisma.$transaction(async (tx) => {
-      const wallet = await tx.creatorWallet.upsert({
-        where: { creatorId: batch.submission.creatorId },
-        update: {},
-        create: { creatorId: batch.submission.creatorId },
-      });
+      const wallet = await ensureCreatorWallet(tx, batch.submission.creatorId);
+      const pendingEntry = await getPendingLedgerEntryForBatch(tx, batch.id);
+      if (pendingEntry?.status === 'PENDING') {
+        await tx.creatorWallet.update({
+          where: { id: wallet.id },
+          data: {
+            pendingBalance: { decrement: pendingEntry.amount },
+          },
+        });
+
+        await (tx.balanceLedgerEntry as any).update({
+          where: { id: pendingEntry.id },
+          data: {
+            status: 'RELEASED',
+            releasedAt: new Date(),
+            notes: input.note ?? 'Pending review batch earnings released to available balance',
+          },
+        });
+      }
+
       await tx.creatorWallet.update({
         where: { id: wallet.id },
         data: {
@@ -332,12 +388,34 @@ export async function updateSubmissionReviewBatch(input: {
     });
   }
 
-  return ((prisma as any).submissionReviewBatch).update({
-    where: { id: batch.id },
-    data: {
-      status: ReviewBatchStatus.REJECTED,
-      adminNotes: input.note ?? null,
-      resolvedAt: new Date(),
-    },
+  return prisma.$transaction(async (tx) => {
+    const wallet = await ensureCreatorWallet(tx, batch.submission.creatorId);
+    const pendingEntry = await getPendingLedgerEntryForBatch(tx, batch.id);
+    if (pendingEntry?.status === 'PENDING') {
+      await tx.creatorWallet.update({
+        where: { id: wallet.id },
+        data: {
+          pendingBalance: { decrement: pendingEntry.amount },
+        },
+      });
+
+      await (tx.balanceLedgerEntry as any).update({
+        where: { id: pendingEntry.id },
+        data: {
+          status: 'CANCELLED',
+          releasedAt: new Date(),
+          notes: input.note ?? 'Pending review batch earnings cancelled after rejection',
+        },
+      });
+    }
+
+    return ((tx as any).submissionReviewBatch).update({
+      where: { id: batch.id },
+      data: {
+        status: ReviewBatchStatus.REJECTED,
+        adminNotes: input.note ?? null,
+        resolvedAt: new Date(),
+      },
+    });
   });
 }

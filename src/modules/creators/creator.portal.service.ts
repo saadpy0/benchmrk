@@ -292,6 +292,26 @@ function computeSubmissionFinancials(submission: any) {
   };
 }
 
+function formatWalletHistoryEntry(entry: any) {
+  return {
+    id: entry.id,
+    entryType: entry.entryType,
+    amount: Number(entry.amount ?? 0),
+    status: entry.status,
+    createdAt: entry.createdAt,
+    releasedAt: entry.releasedAt,
+    notes: entry.notes ?? null,
+    submissionId: entry.submissionId ?? null,
+    reviewBatchId: entry.reviewBatchId ?? null,
+    submission: entry.submission ? {
+      id: entry.submission.id,
+      platform: entry.submission.platform,
+      contentUrl: entry.submission.contentUrl,
+      campaignTitle: entry.submission.campaign?.title ?? null,
+    } : null,
+  };
+}
+
 export async function getCreatorPortalDashboard(userId: string) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user || user.role !== 'CREATOR') throw new Error('Creator account not found');
@@ -325,7 +345,33 @@ export async function getCreatorPortalDashboard(userId: string) {
       orderBy: { createdAt: 'desc' },
     }),
     listCreatorPortalCampaigns(),
-    prisma.creatorWallet.findUnique({ where: { creatorId: creator.id } }),
+    prisma.creatorWallet.findUnique({
+      where: { creatorId: creator.id },
+      include: {
+        entries: {
+          where: {
+            entryType: {
+              in: ['RELEASE_TO_AVAILABLE', 'WITHDRAWAL'],
+            },
+          },
+          include: {
+            submission: {
+              select: {
+                id: true,
+                platform: true,
+                contentUrl: true,
+                campaign: {
+                  select: {
+                    title: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: [{ releasedAt: 'desc' }, { createdAt: 'desc' }],
+        },
+      },
+    }),
   ]);
 
   const campaignById = new Map(availableCampaigns.map((campaign) => [campaign.id, campaign]));
@@ -364,7 +410,9 @@ export async function getCreatorPortalDashboard(userId: string) {
   const totalProjected = submissionItems.reduce((sum, item) => sum + item.projectedValue, 0);
   const totalLatestViews = submissionItems.reduce((sum, item) => sum + item.latestViews, 0);
   const withdrawableAmount = Number(creatorWallet?.availableBalance ?? 0);
+  const lifetimeEarned = Number(creatorWallet?.lifetimeEarned ?? 0);
   const instagram = await getInstagramConnectionSummary(user.id);
+  const walletHistory = (creatorWallet?.entries ?? []).map(formatWalletHistoryEntry);
 
   return {
     creator: {
@@ -384,9 +432,11 @@ export async function getCreatorPortalDashboard(userId: string) {
       totalProjectedValue: Number(totalProjected.toFixed(2)),
       pendingAmount: Number(totalPending.toFixed(2)),
       withdrawableAmount: Number(withdrawableAmount.toFixed(2)),
+      lifetimeEarned: Number(lifetimeEarned.toFixed(2)),
     },
     campaigns: availableCampaigns,
     submissions: submissionItems,
+    walletHistory,
   };
 }
 
