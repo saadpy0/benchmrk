@@ -614,16 +614,6 @@ export default function AdminDashboard() {
 
       <div className="max-w-6xl mx-auto px-6 py-8 space-y-8">
 
-        {/* Stats */}
-        {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatCard label="Total Users"    value={fmt(stats.totalUsers)}       accent="bg-gradient-to-r from-blue-600 to-blue-500" />
-            <StatCard label="Campaigns"      value={fmt(stats.totalCampaigns)}   accent="bg-gradient-to-r from-violet-600 to-violet-500" />
-            <StatCard label="Submissions"    value={fmt(stats.totalSubmissions)} accent="bg-gradient-to-r from-amber-600 to-amber-500" />
-            <StatCard label="Applications"  value={fmt(stats.totalApplications)} accent="bg-gradient-to-r from-emerald-600 to-emerald-500" />
-          </div>
-        )}
-
         {/* ── Mode toggle ── */}
         <div className="flex justify-center">
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-1.5 flex gap-1.5">
@@ -655,6 +645,16 @@ export default function AdminDashboard() {
           </button>
         </div>
         </div>
+
+        {/* Stats */}
+        {stats && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <StatCard label="Total Users"    value={fmt(stats.totalUsers)}       accent="bg-gradient-to-r from-blue-600 to-blue-500" />
+            <StatCard label="Campaigns"      value={fmt(stats.totalCampaigns)}   accent="bg-gradient-to-r from-violet-600 to-violet-500" />
+            <StatCard label="Submissions"    value={fmt(stats.totalSubmissions)} accent="bg-gradient-to-r from-amber-600 to-amber-500" />
+            <StatCard label="Applications"  value={fmt(stats.totalApplications)} accent="bg-gradient-to-r from-emerald-600 to-emerald-500" />
+          </div>
+        )}
 
         {/* Mode content */}
         {mode === 'review' && <ReviewDashboard stats={stats} onStatsRefresh={loadStats} />}
