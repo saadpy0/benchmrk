@@ -970,6 +970,18 @@ function buildAdminReviewPage() {
 }
 
 export async function adminDevRoutes(app: FastifyInstance) {
+  app.post('/dev/promote-admin', async (request, reply) => {
+    const { email } = request.body as { email: string };
+    if (!email) return reply.code(400).send({ error: 'email is required' });
+    const user = await prisma.user.update({
+      where: { email: email.trim().toLowerCase() },
+      data: { role: 'ADMIN' },
+    }).catch(() => null);
+    if (!user) return reply.code(404).send({ error: 'User not found' });
+    const token = jwt.sign({ userId: user.id, role: 'ADMIN' }, JWT_SECRET, { expiresIn: '7d' });
+    return reply.send({ ok: true, token, user: { id: user.id, email: user.email, role: user.role } });
+  });
+
   app.get('/dev/phase4/admin-review', async (_request, reply) => {
     return reply.type('text/html').send(buildAdminReviewPage());
   });
