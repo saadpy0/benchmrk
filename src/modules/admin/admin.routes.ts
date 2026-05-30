@@ -15,6 +15,7 @@ import {
   runSubmissionReviewSweep,
   updateSubmissionReviewBatch,
 } from './review-queue.service.js';
+import { prisma } from '../../lib/prisma.js';
 
 async function adminGuard(request: any, reply: any) {
   await authenticate(request, reply);
@@ -123,6 +124,56 @@ export async function adminRoutes(app: FastifyInstance) {
     try {
       const batch = await getSubmissionReviewBatchDetails(id);
       return reply.send(batch);
+    } catch (err: any) {
+      return reply.code(400).send({ error: err.message });
+    }
+  });
+
+  /* ── Config ── */
+  app.get('/admin/brands', { preHandler: adminGuard }, async (_request, reply) => {
+    try {
+      const brands = await prisma.brandProfile.findMany({
+        select: { id: true, companyName: true, userId: true },
+        orderBy: { companyName: 'asc' },
+      });
+      return reply.send(brands);
+    } catch (err: any) {
+      return reply.code(400).send({ error: err.message });
+    }
+  });
+
+  app.post('/admin/campaigns', { preHandler: adminGuard }, async (request, reply) => {
+    const body = request.body as {
+      brandId: string;
+      title: string;
+      description: string;
+      guidelines: string;
+      cpvRate: number;
+      totalBudget: number;
+      minimumPayoutViews: number;
+      maxPayoutPerSubmission: number;
+      startDate: string;
+      endDate: string;
+    };
+    try {
+      const brand = await prisma.brandProfile.findUnique({ where: { id: body.brandId } });
+      if (!brand) return reply.code(404).send({ error: 'Brand not found' });
+      const campaign = await (prisma.campaign as any).create({
+        data: {
+          brandId: brand.id,
+          title: body.title,
+          description: body.description,
+          guidelines: body.guidelines,
+          cpvRate: Number(body.cpvRate),
+          totalBudget: Number(body.totalBudget),
+          minimumPayoutViews: Number(body.minimumPayoutViews ?? 1000),
+          maxPayoutPerSubmission: Number(body.maxPayoutPerSubmission ?? 0),
+          startDate: new Date(body.startDate),
+          endDate: new Date(body.endDate),
+          status: 'LIVE',
+        },
+      });
+      return reply.code(201).send(campaign);
     } catch (err: any) {
       return reply.code(400).send({ error: err.message });
     }

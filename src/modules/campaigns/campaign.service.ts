@@ -1,6 +1,7 @@
 import type { CampaignStatus } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 import { canTransition } from './campaign.state.js';
+import { platformConfig } from '../../lib/platform-config.js';
 
 export async function createCampaign(
   brandId: string,
@@ -31,7 +32,7 @@ export async function createCampaign(
       maxPayoutPerSubmission: data.maxPayoutPerSubmission ?? 0,
       startDate: new Date(data.startDate),
       endDate: new Date(data.endDate),
-      status: 'DRAFT',
+      status: platformConfig.campaignReviewRequired ? 'PENDING_REVIEW' : 'LIVE',
     },
   });
 }

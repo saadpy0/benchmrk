@@ -83,6 +83,8 @@ export const rebuildYouTubeLiveBaseline = (channelInput: string) =>
 
 // admin
 export const getAdminStats = () => api.get('/admin/stats');
+export const getAdminBrands = () => api.get('/admin/brands');
+export const createAdminCampaign = (data: any) => api.post('/admin/campaigns', data);
 export const getAdminUsers = () => api.get('/admin/users');
 export const suspendUser = (id: string) => api.delete(`/admin/users/${id}`);
 export const getPendingCampaigns = () => api.get('/admin/campaigns/pending');
