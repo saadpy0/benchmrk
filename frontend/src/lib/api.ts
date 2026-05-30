@@ -46,6 +46,13 @@ export const getMyApplications = () => api.get('/my/applications');
 export const submitContent = (id: string, data: any) => api.post(`/campaigns/${id}/submit`, data);
 export const getMySubmissions = () => api.get('/my/submissions');
 
+// creator portal (full dashboard + campaign submit)
+export const getCreatorPortalDashboard = () => api.get('/creator/app/dashboard');
+export const getCreatorPortalCampaigns = () => api.get('/creator/app/campaigns');
+export const submitToCreatorPortalCampaign = (data: { campaignId: string; platform: 'YOUTUBE' | 'INSTAGRAM'; contentUrl: string }) =>
+  api.post('/creator/app/submissions', data);
+export const runCreatorPortalTracking = () => api.post('/creator/app/tracking/run-due', {});
+
 // wallet
 export const getWalletBalance = () => api.get('/payouts/balance');
 export const requestPayout = (amount: number, upiId: string) =>
