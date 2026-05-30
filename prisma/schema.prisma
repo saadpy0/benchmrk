@@ -3,9 +3,263 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id                String                     @id @default(uuid())
+  email             String                     @unique
+  passwordHash      String
+  role              Role
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+  brandProfile      BrandProfile?
+  connectedAccounts ConnectedPlatformAccount[]
+  creatorProfile    CreatorProfile?
+}
+
+model CreatorProfile {
+  id              String              @id @default(uuid())
+  userId          String              @unique
+  displayName     String
+  bio             String?
+  kycStatus       KycStatus           @default(NOT_STARTED)
+  reputationScore Float               @default(0)
+  createdAt       DateTime            @default(now())
+  applications    Application[]
+  submissions     ContentSubmission[]
+  baselines       CreatorBaseline[]
+  user            User                @relation(fields: [userId], references: [id])
+  wallet          CreatorWallet?
+  earningsWallet  EarningsWallet?
+}
+
+model ConnectedPlatformAccount {
+  id                    String    @id @default(uuid())
+  userId                String
+  platform              Platform
+  providerAccountId     String
+  channelTitle          String?
+  publishedAt           DateTime?
+  subscriberCount       Int?
+  uploadsPlaylistId     String?
+  accessToken           String?
+  refreshToken          String?
+  scopes                String?
+  tokenType             String?
+  tokenExpiresAt        DateTime?
+  isPrimary             Boolean   @default(false)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  trustScore            Float?
+  baselineAvgViews      Float?
+  baselineEngagement    Float?
+  baselineFollowerCount Int?
+  user                  User      @relation(fields: [userId], references: [id])
+
+  @@unique([platform, providerAccountId])
+  @@index([userId, platform])
+}
+
+model BrandProfile {
+  id          String     @id @default(uuid())
+  userId      String     @unique
+  companyName String
+  gstNumber   String?
+  verified    Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  user        User       @relation(fields: [userId], references: [id])
+  campaigns   Campaign[]
+}
+
+model Campaign {
+  id           String              @id @default(uuid())
+  brandId      String
+  title        String
+  description  String
+  guidelines   String
+  cpvRate      Decimal
+  totalBudget  Decimal
+  minimumPayoutViews Int            @default(1000)
+  maxPayoutPerSubmission Decimal    @default(0)
+  status       CampaignStatus      @default(DRAFT)
+  startDate    DateTime
+  endDate      DateTime
+  createdAt    DateTime            @default(now())
+  applications Application[]
+  brand        BrandProfile        @relation(fields: [brandId], references: [id])
+  reviewBatches SubmissionReviewBatch[]
+  submissions  ContentSubmission[]
+}
+
+model Application {
+  id         String         @id @default(uuid())
+  campaignId String
+  creatorId  String
+  status     String         @default("PENDING")
+  createdAt  DateTime       @default(now())
+  campaign   Campaign       @relation(fields: [campaignId], references: [id])
+  creator    CreatorProfile @relation(fields: [creatorId], references: [id])
+
+  @@unique([campaignId, creatorId])
+}
+
+model ContentSubmission {
+  id              String                  @id @default(uuid())
+  campaignId      String
+  creatorId       String
+  platform        Platform
+  contentUrl      String
+  status          SubmissionStatus        @default(SUBMITTED)
+  brandFeedback   String?
+  verifiedViews   Int?
+  lastCheckedAt   DateTime?
+  analysisStoppedAt DateTime?
+  fraudScore      Float?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  balanceEntries  BalanceLedgerEntry[]
+  campaign        Campaign                @relation(fields: [campaignId], references: [id])
+  creator         CreatorProfile          @relation(fields: [creatorId], references: [id])
+  metricSnapshots MetricSnapshot[]
+  reviewBatches   SubmissionReviewBatch[]
+  trackingJobs    SubmissionTrackingJob[]
+}
+
+model SubmissionTrackingJob {
+  id                  String            @id @default(uuid())
+  submissionId        String
+  sequence            Int
+  checkpointLabel     String
+  scheduledFor        DateTime
+  status              TrackingJobStatus @default(PENDING)
+  attemptCount        Int               @default(0)
+  lastError           String?
+  processingStartedAt DateTime?
+  completedAt         DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  submission          ContentSubmission @relation(fields: [submissionId], references: [id])
+
+  @@unique([submissionId, sequence])
+  @@index([status, scheduledFor])
+  @@index([submissionId, scheduledFor])
+}
+
+model CreatorBaseline {
+  id                String         @id @default(uuid())
+  creatorId         String
+  platform          Platform
+  sampleSize        Int            @default(30)
+  avgViews          Float
+  avgLikes          Float
+  avgComments       Float
+  avgEngagementRate Float
+  followerCount     Int?
+  audienceIndiaPct  Float?
+  computedAt        DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  creator           CreatorProfile @relation(fields: [creatorId], references: [id])
+
+  @@unique([creatorId, platform])
+}
+
+model MetricSnapshot {
+  id                 String            @id @default(uuid())
+  submissionId       String
+  capturedAt         DateTime          @default(now())
+  viewCount          Int
+  likeCount          Int?
+  commentCount       Int?
+  shareCount         Int?
+  engagementRatio    Float?
+  geographicIndiaPct Float?
+  submission         ContentSubmission @relation(fields: [submissionId], references: [id])
+
+  @@index([submissionId, capturedAt])
+}
+
+model SubmissionReviewBatch {
+  id                 String               @id @default(uuid())
+  submissionId       String
+  campaignId         String
+  cycleNumber        Int
+  windowOpenedAt     DateTime
+  reviewStartedAt    DateTime             @default(now())
+  lockedFromViews    Int
+  lockedToViews      Int
+  incrementalViews   Int
+  grossAmount        Decimal
+  status             ReviewBatchStatus    @default(PENDING_REVIEW)
+  adminNotes         String?
+  moreInfoRequest    String?
+  resolvedAt         DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  campaign           Campaign             @relation(fields: [campaignId], references: [id])
+  ledgerEntries      BalanceLedgerEntry[]
+  submission         ContentSubmission    @relation(fields: [submissionId], references: [id])
+
+  @@unique([submissionId, cycleNumber])
+  @@index([campaignId, cycleNumber])
+  @@index([status, campaignId, createdAt])
+}
+
+model CreatorWallet {
+  id               String               @id @default(uuid())
+  creatorId        String               @unique
+  pendingBalance   Decimal              @default(0)
+  availableBalance Decimal              @default(0)
+  lifetimeEarned   Decimal              @default(0)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  entries          BalanceLedgerEntry[]
+  creator          CreatorProfile       @relation(fields: [creatorId], references: [id])
+}
+
+model BalanceLedgerEntry {
+  id           String             @id @default(uuid())
+  walletId     String
+  submissionId String?
+  reviewBatchId String?
+  entryType    BalanceEntryType
+  status       BalanceEntryStatus @default(PENDING)
+  amount       Decimal
+  holdUntil    DateTime?
+  notes        String?
+  createdAt    DateTime           @default(now())
+  releasedAt   DateTime?
+  reviewBatch  SubmissionReviewBatch? @relation(fields: [reviewBatchId], references: [id])
+  submission   ContentSubmission? @relation(fields: [submissionId], references: [id])
+  wallet       CreatorWallet      @relation(fields: [walletId], references: [id])
+
+  @@index([walletId, createdAt])
+  @@index([reviewBatchId])
+  @@index([submissionId])
+}
+
+model EarningsWallet {
+  id          String         @id @default(uuid())
+  creatorId   String         @unique
+  balance     Decimal        @default(0)
+  totalEarned Decimal        @default(0)
+  updatedAt   DateTime       @updatedAt
+  creator     CreatorProfile @relation(fields: [creatorId], references: [id])
+  payouts     Payout[]
+}
+
+model Payout {
+  id          String         @id @default(uuid())
+  walletId    String
+  amount      Decimal
+  status      PayoutStatus   @default(PENDING)
+  upiId       String?
+  bankAccount String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  wallet      EarningsWallet @relation(fields: [walletId], references: [id])
 }
 
 enum Role {
@@ -40,6 +294,13 @@ enum SubmissionStatus {
   PAID
 }
 
+enum TrackingJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 enum Platform {
   INSTAGRAM
   YOUTUBE
@@ -60,210 +321,11 @@ enum BalanceEntryStatus {
   CANCELLED
 }
 
-model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String
-  role         Role
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  creatorProfile   CreatorProfile?
-  brandProfile     BrandProfile?
-  connectedAccounts ConnectedPlatformAccount[]
-}
-
-model CreatorProfile {
-  id              String    @id @default(uuid())
-  userId          String    @unique
-  user            User      @relation(fields: [userId], references: [id])
-  displayName     String
-  bio             String?
-  kycStatus       KycStatus @default(NOT_STARTED)
-  reputationScore Float     @default(0)
-  createdAt       DateTime  @default(now())
-
-  applications   Application[]
-  submissions    ContentSubmission[]
-  baselines      CreatorBaseline[]
-  wallet         CreatorWallet?
-  earningsWallet EarningsWallet?
-}
-
-model ConnectedPlatformAccount {
-  id                String   @id @default(uuid())
-  userId            String
-  user              User     @relation(fields: [userId], references: [id])
-  platform          Platform
-  providerAccountId String
-  channelTitle      String?
-  publishedAt       DateTime?
-  subscriberCount   Int?
-  uploadsPlaylistId String?
-  accessToken       String?
-  refreshToken      String?
-  scopes            String?
-  tokenType         String?
-  tokenExpiresAt    DateTime?
-  isPrimary         Boolean  @default(false)
-  trustScore        Float?
-  baselineAvgViews      Float?
-  baselineEngagement    Float?
-  baselineFollowerCount Int?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  @@unique([platform, providerAccountId])
-  @@index([userId, platform])
-}
-
-model BrandProfile {
-  id          String   @id @default(uuid())
-  userId      String   @unique
-  user        User     @relation(fields: [userId], references: [id])
-  companyName String
-  gstNumber   String?
-  verified    Boolean  @default(false)
-  createdAt   DateTime @default(now())
-
-  campaigns Campaign[]
-}
-
-model Campaign {
-  id          String         @id @default(uuid())
-  brandId     String
-  brand       BrandProfile   @relation(fields: [brandId], references: [id])
-  title       String
-  description String
-  guidelines  String
-  cpvRate     Decimal
-  totalBudget Decimal
-  status      CampaignStatus @default(DRAFT)
-  startDate   DateTime
-  endDate     DateTime
-  createdAt   DateTime       @default(now())
-
-  applications Application[]
-  submissions  ContentSubmission[]
-}
-
-model Application {
-  id         String         @id @default(uuid())
-  campaignId String
-  campaign   Campaign       @relation(fields: [campaignId], references: [id])
-  creatorId  String
-  creator    CreatorProfile @relation(fields: [creatorId], references: [id])
-  status     String         @default("PENDING")
-  createdAt  DateTime       @default(now())
-
-  @@unique([campaignId, creatorId])
-}
-
-model ContentSubmission {
-  id            String           @id @default(uuid())
-  campaignId    String
-  campaign      Campaign         @relation(fields: [campaignId], references: [id])
-  creatorId     String
-  creator       CreatorProfile   @relation(fields: [creatorId], references: [id])
-  platform      Platform
-  contentUrl    String
-  status        SubmissionStatus @default(SUBMITTED)
-  brandFeedback String?
-
-  verifiedViews Int?
-  lastCheckedAt DateTime?
-  fraudScore    Float?
-
-  metricSnapshots MetricSnapshot[]
-  balanceEntries  BalanceLedgerEntry[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model CreatorBaseline {
-  id                String         @id @default(uuid())
-  creatorId         String
-  creator           CreatorProfile @relation(fields: [creatorId], references: [id])
-  platform          Platform
-  sampleSize        Int            @default(30)
-  avgViews          Float
-  avgLikes          Float
-  avgComments       Float
-  avgEngagementRate Float
-  followerCount     Int?
-  audienceIndiaPct  Float?
-  computedAt        DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
-
-  @@unique([creatorId, platform])
-}
-
-model MetricSnapshot {
-  id                 String            @id @default(uuid())
-  submissionId       String
-  submission         ContentSubmission @relation(fields: [submissionId], references: [id])
-  capturedAt         DateTime          @default(now())
-  viewCount          Int
-  likeCount          Int?
-  commentCount       Int?
-  shareCount         Int?
-  engagementRatio    Float?
-  geographicIndiaPct Float?
-
-  @@index([submissionId, capturedAt])
-}
-
-model CreatorWallet {
-  id               String               @id @default(uuid())
-  creatorId        String               @unique
-  creator          CreatorProfile       @relation(fields: [creatorId], references: [id])
-  pendingBalance   Decimal              @default(0)
-  availableBalance Decimal              @default(0)
-  lifetimeEarned   Decimal              @default(0)
-  entries          BalanceLedgerEntry[]
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
-}
-
-model BalanceLedgerEntry {
-  id           String             @id @default(uuid())
-  walletId     String
-  wallet       CreatorWallet      @relation(fields: [walletId], references: [id])
-  submissionId String?
-  submission   ContentSubmission? @relation(fields: [submissionId], references: [id])
-  entryType    BalanceEntryType
-  status       BalanceEntryStatus @default(PENDING)
-  amount       Decimal
-  holdUntil    DateTime?
-  notes        String?
-  createdAt    DateTime           @default(now())
-  releasedAt   DateTime?
-
-  @@index([walletId, createdAt])
-  @@index([submissionId])
-}
-model EarningsWallet {
-  id              String   @id @default(uuid())
-  creatorId       String   @unique
-  creator         CreatorProfile @relation(fields: [creatorId], references: [id])
-  balance         Decimal  @default(0)
-  totalEarned     Decimal  @default(0)
-  updatedAt       DateTime @updatedAt
-
-  payouts         Payout[]
-}
-
-model Payout {
-  id              String        @id @default(uuid())
-  walletId        String
-  wallet          EarningsWallet @relation(fields: [walletId], references: [id])
-  amount          Decimal
-  status          PayoutStatus  @default(PENDING)
-  upiId           String?
-  bankAccount     String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+enum ReviewBatchStatus {
+  PENDING_REVIEW
+  VERIFIED
+  REJECTED
+  MORE_INFO_REQUESTED
 }
 
 enum PayoutStatus {

@@ -28,5 +28,15 @@
 - Registered the baseline routes in the Fastify server.
 - Verified that Prisma schema validation passes with the new Phase 2 code in place.
 
+### Phase 3: Continuous Tracking Engine (YouTube current scope)
+- Added submission tracking jobs and metric snapshot persistence for submitted YouTube videos.
+- Added automatic background polling with an immediate startup check and dev-friendly polling cadence.
+- Added a streamlined `/dev/phase2` tester that bootstraps hidden dev campaign/application state and supports direct YouTube submission tracking.
+- Added manual track-now, run-due, and old-submissions inspection flows for testing historical submissions.
+- Added a 10-minute dev checkpoint schedule through a 2-hour observation window for validating continuous tracking behavior.
+- Fixed checkpoint progression so manual captures also complete the correct scheduled job.
+- Added a conservative YouTube verifier that only marks a video `VERIFIED` when the observed growth pattern stays clean; otherwise it remains in `UNDER_REVIEW`.
+- Improved the dev output formatting to show snapshot history, growth deltas, baseline comparison, verdict, and reasons.
+
 ## In Progress
-- Test Phase 2 baseline endpoints thoroughly before moving to the next phase.
+- Phase 4 roadmap work remains: 72-hour / longer-horizon production scheduling, payout hold maturation, and admin review queue integration.

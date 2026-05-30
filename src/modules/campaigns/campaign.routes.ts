@@ -27,6 +27,8 @@ export async function campaignRoutes(app: FastifyInstance) {
       guidelines: string;
       cpvRate: number;
       totalBudget: number;
+      minimumPayoutViews?: number;
+      maxPayoutPerSubmission?: number;
       startDate: string;
       endDate: string;
     };
