@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../../lib/prisma.js';
 import { submitContent } from '../campaigns/submission.service.js';
 import { processDueTrackingJobs, trackSubmissionNow } from '../campaigns/submission-tracking.service.js';
+import { runSubmissionReviewSweep } from '../admin/review-queue.service.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'changeme';
 const PRODUCTION_SWEEP_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -283,6 +284,8 @@ export async function submitCreatorPortalVideo(input: {
   await ensureCreatorCanSubmitToCampaign(input.userId, input.campaignId);
   const submission = await submitContent(input.userId, input.campaignId, input.platform, input.contentUrl);
   await trackSubmissionNow(input.userId, submission.id);
+  // Auto-run the review sweep so batches appear immediately without manual admin trigger
+  runSubmissionReviewSweep({ campaignId: input.campaignId }).catch(() => {});
   return submission;
 }
 
@@ -293,18 +296,17 @@ function computeSubmissionFinancials(submission: any) {
   const grossCurrentValue = latestViews * cpvRate;
   const cap = Number(submission.campaign.maxPayoutPerSubmission ?? 0);
   const projectedValue = cap > 0 ? Math.min(grossCurrentValue, cap) : grossCurrentValue;
-  const resolvedAmount = (submission.reviewBatches ?? []).reduce((sum: number, batch: any) => {
-    return batch.status === 'VERIFIED' ? sum + Number(batch.grossAmount ?? 0) : sum;
-  }, 0);
+  // Use actual RELEASE_TO_AVAILABLE ledger entries so partial payouts are
+  // correctly reflected (batch.grossAmount stays as the full batch size even
+  // after a partial verify, which would incorrectly zero out pendingAmount).
   const releasedAmount = (submission.reviewBatches ?? []).reduce((sum: number, batch: any) => {
-    if (batch.status !== 'VERIFIED') {
-      return sum;
-    }
+    if (batch.status !== 'VERIFIED') return sum;
     return sum + (batch.ledgerEntries ?? []).reduce((entrySum: number, entry: any) => {
       return entry.entryType === 'RELEASE_TO_AVAILABLE' ? entrySum + Number(entry.amount ?? 0) : entrySum;
     }, 0);
   }, 0);
-  const pendingAmount = Math.max(projectedValue - resolvedAmount, 0);
+  const resolvedAmount = releasedAmount;
+  const pendingAmount = Math.max(projectedValue - releasedAmount, 0);
 
   return {
     latestViews,
@@ -441,6 +443,7 @@ export async function getCreatorPortalDashboard(userId: string) {
   const totalPending = submissionItems.reduce((sum, item) => sum + item.pendingAmount, 0);
   const totalProjected = submissionItems.reduce((sum, item) => sum + item.projectedValue, 0);
   const totalLatestViews = submissionItems.reduce((sum, item) => sum + item.latestViews, 0);
+  const totalVerifiedViews = submissionItems.reduce((sum, item) => sum + item.verifiedViews, 0);
   const withdrawableAmount = Number(creatorWallet?.availableBalance ?? 0);
   const lifetimeEarned = Number(creatorWallet?.lifetimeEarned ?? 0);
   const instagram = await getInstagramConnectionSummary(user.id);
@@ -461,6 +464,7 @@ export async function getCreatorPortalDashboard(userId: string) {
     summary: {
       totalSubmissions: submissionItems.length,
       totalLatestViews,
+      totalVerifiedViews,
       totalProjectedValue: Number(totalProjected.toFixed(2)),
       pendingAmount: Number(totalPending.toFixed(2)),
       withdrawableAmount: Number(withdrawableAmount.toFixed(2)),

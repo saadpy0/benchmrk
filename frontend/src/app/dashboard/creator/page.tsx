@@ -5,9 +5,6 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import {
   getCreatorProfile,
-  getCreatorAnalytics,
-  getWalletBalance,
-  getMyApplications,
   getInstagramOAuthUrl,
   getYouTubeOAuthUrl,
   getConnectedAccounts,
@@ -17,8 +14,6 @@ import {
   rebuildYouTubeConnectedBaseline,
   rebuildYouTubeLiveBaseline,
   getCreatorPortalDashboard,
-  submitToCreatorPortalCampaign,
-  runCreatorPortalTracking,
 } from '@/lib/api';
 
 /* ─── Trust helpers ─────────────────────────────────────────────────────── */
@@ -118,10 +113,7 @@ export default function CreatorDashboard() {
   const { user, logout, loading } = useAuth();
   const router = useRouter();
 
-  const [profile, setProfile]           = useState<any>(null);
-  const [analytics, setAnalytics]       = useState<any>(null);
-  const [wallet, setWallet]             = useState<any>(null);
-  const [applications, setApplications] = useState<any[]>([]);
+  const [profile, setProfile] = useState<any>(null);
 
   const [igAccounts, setIgAccounts] = useState<any[]>([]);
   const [ytAccounts, setYtAccounts] = useState<any[]>([]);
@@ -129,14 +121,6 @@ export default function CreatorDashboard() {
   // creator portal data
   const [portalDashboard, setPortalDashboard]   = useState<any>(null);
   const [portalLoading, setPortalLoading]       = useState(false);
-
-  // submit modal state
-  const [submitModal, setSubmitModal]       = useState<{ campaignId: string; campaignTitle: string } | null>(null);
-  const [submitUrl, setSubmitUrl]           = useState('');
-  const [submitPlatform, setSubmitPlatform] = useState<'YOUTUBE' | 'INSTAGRAM'>('YOUTUBE');
-  const [submitting, setSubmitting]         = useState(false);
-  const [submitError, setSubmitError]       = useState('');
-  const [submitSuccess, setSubmitSuccess]   = useState('');
 
   const [igConnecting, setIgConnecting] = useState(false);
   const [ytConnecting, setYtConnecting] = useState(false);
@@ -197,9 +181,6 @@ export default function CreatorDashboard() {
   useEffect(() => {
     if (user) {
       refreshProfile();
-      getCreatorAnalytics().then(r => setAnalytics(r.data)).catch(() => {});
-      getWalletBalance().then(r => setWallet(r.data)).catch(() => {});
-      getMyApplications().then(r => setApplications(r.data)).catch(() => {});
       loadAccounts(true);
       loadPortalDashboard();
     }
@@ -276,31 +257,6 @@ export default function CreatorDashboard() {
     finally { setYtImporting(false); }
   };
 
-  const openSubmitModal = (campaignId: string, campaignTitle: string) => {
-    setSubmitModal({ campaignId, campaignTitle });
-    setSubmitUrl(''); setSubmitPlatform('YOUTUBE');
-    setSubmitError(''); setSubmitSuccess('');
-  };
-
-  const handleSubmitVideo = async () => {
-    if (!submitModal || !submitUrl.trim()) return;
-    setSubmitting(true); setSubmitError(''); setSubmitSuccess('');
-    try {
-      await submitToCreatorPortalCampaign({
-        campaignId: submitModal.campaignId,
-        platform: submitPlatform,
-        contentUrl: submitUrl.trim(),
-      });
-      setSubmitSuccess('Submission received! Tracking will begin shortly.');
-      setSubmitUrl('');
-      loadPortalDashboard();
-    } catch (err: any) {
-      setSubmitError(err.response?.data?.error || err.message || 'Submission failed');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   if (loading) return (
     <div className="min-h-screen bg-black flex items-center justify-center">
       <div className="flex items-center gap-3 text-zinc-400">
@@ -321,7 +277,6 @@ export default function CreatorDashboard() {
   const initials = (profile?.displayName || user?.email || 'U').slice(0, 2).toUpperCase();
   const summary = portalDashboard?.summary;
   const submissions: any[] = portalDashboard?.submissions ?? [];
-  const campaigns: any[] = portalDashboard?.campaigns ?? [];
   const walletHistory: any[] = portalDashboard?.walletHistory ?? [];
 
   return (
@@ -372,94 +327,65 @@ export default function CreatorDashboard() {
           )}
         </div>
 
-        {/* ── Stats grid ── */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {/* ── Stats row ── */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           <StatCard
-            label="Balance"
-            value={`₹${parseFloat(wallet?.balance || 0).toFixed(2)}`}
-            sub="Available to withdraw"
+            label="Withdrawable"
+            value={portalLoading ? '—' : `₹${(summary?.withdrawableAmount ?? 0).toFixed(2)}`}
+            sub="Ready to pay out"
             accent="bg-gradient-to-r from-emerald-600 to-emerald-500"
           />
           <StatCard
-            label="Total Earned"
-            value={`₹${parseFloat(wallet?.totalEarned || 0).toFixed(2)}`}
-            sub="All time earnings"
+            label="Pending"
+            value={portalLoading ? '—' : `₹${(summary?.pendingAmount ?? 0).toFixed(2)}`}
+            sub="Awaiting review sweep"
+            accent="bg-gradient-to-r from-amber-600 to-amber-500"
+          />
+          <StatCard
+            label="Lifetime Earned"
+            value={portalLoading ? '—' : `₹${(summary?.lifetimeEarned ?? 0).toFixed(2)}`}
+            sub="All time total"
             accent="bg-gradient-to-r from-blue-600 to-blue-500"
           />
           <StatCard
             label="Submissions"
-            value={String(analytics?.totalSubmissions || 0)}
+            value={String(summary?.totalSubmissions || 0)}
             sub="Content submitted"
             accent="bg-gradient-to-r from-violet-600 to-violet-500"
           />
           <StatCard
             label="Verified Views"
-            value={String(analytics?.totalVerifiedViews || 0)}
+            value={Number(summary?.totalVerifiedViews || 0).toLocaleString()}
             sub="Across all campaigns"
             accent="bg-gradient-to-r from-red-600 to-red-500"
           />
         </div>
 
-        {/* ── Earnings ── */}
-        {(summary || portalLoading) && (
-          <section>
-            <SectionHeader title="Earnings" right={
-              <p className="text-xs text-zinc-600">Updates after every review sweep</p>
-            } />
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="relative bg-zinc-900 border border-zinc-800 rounded-2xl p-5 overflow-hidden hover:border-zinc-700 transition-colors duration-200">
-                <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-emerald-600 to-emerald-500" />
-                <p className="text-zinc-500 text-xs font-medium uppercase tracking-widest mb-3">Withdrawable</p>
-                <p className="text-2xl font-bold text-white">
-                  {portalLoading ? '—' : `₹${(summary?.withdrawableAmount ?? 0).toFixed(2)}`}
-                </p>
-                <p className="text-xs text-zinc-600 mt-1">Ready to pay out</p>
-              </div>
-              <div className="relative bg-zinc-900 border border-zinc-800 rounded-2xl p-5 overflow-hidden hover:border-zinc-700 transition-colors duration-200">
-                <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-amber-600 to-amber-500" />
-                <p className="text-zinc-500 text-xs font-medium uppercase tracking-widest mb-3">Pending</p>
-                <p className="text-2xl font-bold text-white">
-                  {portalLoading ? '—' : `₹${(summary?.pendingAmount ?? 0).toFixed(2)}`}
-                </p>
-                <p className="text-xs text-zinc-600 mt-1">Awaiting review sweep</p>
-              </div>
-              <div className="relative bg-zinc-900 border border-zinc-800 rounded-2xl p-5 overflow-hidden hover:border-zinc-700 transition-colors duration-200">
-                <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-blue-600 to-blue-500" />
-                <p className="text-zinc-500 text-xs font-medium uppercase tracking-widest mb-3">Lifetime Earned</p>
-                <p className="text-2xl font-bold text-white">
-                  {portalLoading ? '—' : `₹${(summary?.lifetimeEarned ?? 0).toFixed(2)}`}
-                </p>
-                <p className="text-xs text-zinc-600 mt-1">All time total</p>
-              </div>
+        {/* ── Transaction History ── */}
+        {walletHistory.length > 0 && (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-zinc-800/80">
+              <p className="text-sm font-medium text-zinc-300">Transaction History</p>
             </div>
-
-            {/* Wallet history */}
-            {walletHistory.length > 0 && (
-              <div className="mt-4 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
-                <div className="px-5 py-3.5 border-b border-zinc-800/80">
-                  <p className="text-sm font-medium text-zinc-300">Transaction History</p>
+            <div className="divide-y divide-zinc-800/60">
+              {walletHistory.slice(0, 8).map((entry: any) => (
+                <div key={entry.id} className="px-5 py-3 flex items-center justify-between gap-4 hover:bg-zinc-800/30 transition-colors">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-white truncate">
+                      {entry.submission?.campaignTitle ?? entry.notes ?? entry.entryType}
+                    </p>
+                    <p className="text-xs text-zinc-600 mt-0.5">
+                      {entry.entryType === 'RELEASE_TO_AVAILABLE' ? 'Earnings released' : 'Withdrawal'} ·{' '}
+                      {new Date(entry.releasedAt || entry.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </p>
+                  </div>
+                  <span className={`text-sm font-semibold flex-shrink-0 ${entry.entryType === 'WITHDRAWAL' ? 'text-red-400' : 'text-emerald-400'}`}>
+                    {entry.entryType === 'WITHDRAWAL' ? '-' : '+'}₹{Number(entry.amount).toFixed(2)}
+                  </span>
                 </div>
-                <div className="divide-y divide-zinc-800/60">
-                  {walletHistory.slice(0, 8).map((entry: any) => (
-                    <div key={entry.id} className="px-5 py-3 flex items-center justify-between gap-4 hover:bg-zinc-800/30 transition-colors">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm text-white truncate">
-                          {entry.submission?.campaignTitle ?? entry.notes ?? entry.entryType}
-                        </p>
-                        <p className="text-xs text-zinc-600 mt-0.5">
-                          {entry.entryType === 'RELEASE_TO_AVAILABLE' ? 'Earnings released' : 'Withdrawal'} ·{' '}
-                          {new Date(entry.releasedAt || entry.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                        </p>
-                      </div>
-                      <span className={`text-sm font-semibold flex-shrink-0 ${entry.entryType === 'WITHDRAWAL' ? 'text-red-400' : 'text-emerald-400'}`}>
-                        {entry.entryType === 'WITHDRAWAL' ? '-' : '+'}₹{Number(entry.amount).toFixed(2)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </section>
+              ))}
+            </div>
+          </div>
         )}
 
         {/* ── My Submissions ── */}
@@ -485,7 +411,13 @@ export default function CreatorDashboard() {
                 </svg>
               </div>
               <p className="text-white font-semibold mb-1">No submissions yet</p>
-              <p className="text-zinc-500 text-sm">Pick a campaign below and submit your content URL to start earning</p>
+              <p className="text-zinc-500 text-sm">Browse campaigns and submit your content URL to start earning</p>
+              <button
+                onClick={() => router.push('/discover')}
+                className="mt-4 bg-red-600 hover:bg-red-500 text-white font-semibold px-5 py-2 rounded-xl text-sm transition-all shadow-lg shadow-red-900/30"
+              >
+                Browse Campaigns
+              </button>
             </div>
           )}
 
@@ -539,99 +471,6 @@ export default function CreatorDashboard() {
                   )}
                 </div>
               ))}
-            </div>
-          )}
-        </section>
-
-        {/* ── Available Campaigns ── */}
-        <section>
-          <SectionHeader title="Available Campaigns" right={
-            <button
-              onClick={loadPortalDashboard}
-              disabled={portalLoading}
-              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" className={portalLoading ? 'animate-spin' : ''}>
-                <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-              Refresh
-            </button>
-          } />
-
-          {!portalLoading && campaigns.length === 0 && (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center">
-              <div className="w-12 h-12 rounded-2xl bg-zinc-800 flex items-center justify-center mx-auto mb-4">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="text-zinc-600">
-                  <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </div>
-              <p className="text-white font-semibold mb-1">No live campaigns right now</p>
-              <p className="text-zinc-500 text-sm">Check back soon — new campaigns are added regularly</p>
-            </div>
-          )}
-
-          {campaigns.length > 0 && (
-            <div className="space-y-3">
-              {campaigns.map((campaign: any) => {
-                const budgetPct = campaign.totalBudget > 0
-                  ? Math.min((campaign.spentBudget / campaign.totalBudget) * 100, 100)
-                  : 0;
-                return (
-                  <div key={campaign.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 hover:border-zinc-700 transition-colors">
-                    <div className="flex items-start justify-between gap-4 mb-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                          <p className="text-sm font-semibold text-white">{campaign.title}</p>
-                          <span className="text-xs bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded-md">{campaign.brandName}</span>
-                        </div>
-                        {campaign.description && (
-                          <p className="text-xs text-zinc-500 mt-1 line-clamp-2">{campaign.description}</p>
-                        )}
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <p className="text-base font-bold text-red-400">₹{campaign.dollarsPerThousandViews?.toFixed(0)}</p>
-                        <p className="text-xs text-zinc-600">per 1K views</p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 mb-3">
-                      <div className="bg-zinc-800/60 border border-zinc-800 rounded-xl px-2.5 py-2 text-center">
-                        <p className="text-zinc-600 text-xs">Budget Left</p>
-                        <p className="text-white text-sm font-semibold mt-0.5">₹{campaign.remainingBudget?.toFixed(0)}</p>
-                      </div>
-                      <div className="bg-zinc-800/60 border border-zinc-800 rounded-xl px-2.5 py-2 text-center">
-                        <p className="text-zinc-600 text-xs">Min Views</p>
-                        <p className="text-white text-sm font-semibold mt-0.5">{(campaign.minimumPayoutViews ?? 0).toLocaleString()}</p>
-                      </div>
-                      <div className="bg-zinc-800/60 border border-zinc-800 rounded-xl px-2.5 py-2 text-center">
-                        <p className="text-zinc-600 text-xs">Max Payout</p>
-                        <p className="text-white text-sm font-semibold mt-0.5">₹{campaign.maxPayoutPerSubmission?.toFixed(0)}</p>
-                      </div>
-                    </div>
-
-                    {/* Budget bar */}
-                    <div className="mb-3">
-                      <div className="flex items-center justify-between text-xs text-zinc-600 mb-1">
-                        <span>Budget used</span>
-                        <span>{budgetPct.toFixed(0)}%</span>
-                      </div>
-                      <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-red-600 to-red-500 rounded-full transition-all duration-500"
-                          style={{ width: `${budgetPct}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={() => openSubmitModal(campaign.id, campaign.title)}
-                      className="w-full py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-sm font-semibold transition-all duration-200 shadow-lg shadow-red-900/20"
-                    >
-                      Submit Content
-                    </button>
-                  </div>
-                );
-              })}
             </div>
           )}
         </section>
@@ -881,139 +720,7 @@ export default function CreatorDashboard() {
           </div>
         </section>
 
-        {/* ── My Applications ── */}
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-base font-semibold text-white">My Applications</h3>
-            <button
-              onClick={() => router.push('/discover')}
-              className="text-sm text-red-400 hover:text-red-300 transition-colors font-medium"
-            >
-              Browse Campaigns →
-            </button>
-          </div>
-
-          {applications.length === 0 ? (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-12 text-center">
-              <div className="w-14 h-14 rounded-2xl bg-zinc-800 flex items-center justify-center mx-auto mb-4">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="text-zinc-600">
-                  <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </div>
-              <p className="text-white font-semibold mb-1">No applications yet</p>
-              <p className="text-zinc-500 text-sm mb-6">Browse campaigns and start earning from your audience</p>
-              <button
-                onClick={() => router.push('/discover')}
-                className="bg-red-600 hover:bg-red-500 text-white font-semibold px-6 py-2.5 rounded-xl transition-all duration-200 text-sm shadow-lg shadow-red-900/30"
-              >
-                Discover Campaigns
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {applications.map((app: any) => (
-                <div
-                  key={app.id}
-                  className="bg-zinc-900 border border-zinc-800 rounded-2xl px-5 py-4 flex items-center justify-between hover:border-zinc-700 transition-colors group"
-                >
-                  <div className="min-w-0">
-                    <p className="font-medium text-sm truncate">{app.campaign.title}</p>
-                    <p className="text-zinc-500 text-xs mt-0.5">₹{app.campaign.cpvRate} per verified view</p>
-                  </div>
-                  <span className={`text-xs font-medium px-2.5 py-1 rounded-full flex-shrink-0 ${
-                    app.status === 'ACCEPTED' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                    app.status === 'REJECTED' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
-                    'bg-zinc-800 text-zinc-400 border border-zinc-700'
-                  }`}>
-                    {app.status}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
       </div>
-
-      {/* ── Submit Content Modal ── */}
-      {submitModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setSubmitModal(null)} />
-          <div className="relative bg-zinc-900 border border-zinc-700 rounded-2xl p-6 w-full max-w-md shadow-2xl">
-            <div className="flex items-center justify-between mb-5">
-              <div>
-                <h3 className="text-base font-semibold text-white">Submit Content</h3>
-                <p className="text-xs text-zinc-500 mt-0.5">{submitModal.campaignTitle}</p>
-              </div>
-              <button
-                onClick={() => setSubmitModal(null)}
-                className="text-zinc-600 hover:text-white transition-colors"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                  <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                </svg>
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              {/* Platform toggle */}
-              <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-2">Platform</label>
-                <div className="bg-zinc-800 border border-zinc-700 rounded-xl p-1 flex gap-1">
-                  {(['YOUTUBE', 'INSTAGRAM'] as const).map(p => (
-                    <button
-                      key={p}
-                      onClick={() => setSubmitPlatform(p)}
-                      className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium transition-all ${
-                        submitPlatform === p ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-zinc-300'
-                      }`}
-                    >
-                      {p === 'YOUTUBE' ? <YouTubeIcon /> : <InstagramIcon />}
-                      {p === 'YOUTUBE' ? 'YouTube' : 'Instagram'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* URL input */}
-              <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-2">Content URL</label>
-                <input
-                  type="url"
-                  value={submitUrl}
-                  onChange={e => setSubmitUrl(e.target.value)}
-                  placeholder={submitPlatform === 'YOUTUBE' ? 'https://youtube.com/watch?v=...' : 'https://instagram.com/p/...'}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-red-500/50 transition-colors"
-                />
-              </div>
-
-              {submitError && (
-                <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 text-red-400 text-xs">
-                  {submitError}
-                </div>
-              )}
-              {submitSuccess && (
-                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3 text-emerald-400 text-xs">
-                  {submitSuccess}
-                </div>
-              )}
-
-              <button
-                onClick={handleSubmitVideo}
-                disabled={submitting || !submitUrl.trim()}
-                className="w-full py-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-all shadow-lg shadow-red-900/20"
-              >
-                {submitting ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Submitting…
-                  </span>
-                ) : 'Submit'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

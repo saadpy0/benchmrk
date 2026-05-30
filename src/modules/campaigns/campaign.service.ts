@@ -54,6 +54,75 @@ export async function getCampaignById(id: string) {
   return campaign;
 }
 
+export async function getDiscoverCampaigns() {
+  const campaigns = await prisma.campaign.findMany({
+    where: { status: 'LIVE' },
+    include: {
+      brand: { select: { companyName: true } },
+      submissions: {
+        select: {
+          creatorId: true,
+          metricSnapshots: {
+            orderBy: { capturedAt: 'desc' },
+            take: 1,
+            select: { viewCount: true },
+          },
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (campaigns.length === 0) return [];
+
+  // fetch verified spend for all campaigns in one query
+  const campaignIds = campaigns.map(c => c.id);
+  const ledgerEntries = await (prisma.balanceLedgerEntry as any).findMany({
+    where: {
+      entryType: 'RELEASE_TO_AVAILABLE',
+      reviewBatch: { campaignId: { in: campaignIds } },
+    },
+    include: { reviewBatch: { select: { campaignId: true } } },
+  });
+
+  const spendMap = new Map<string, number>();
+  for (const entry of ledgerEntries) {
+    const cid = entry.reviewBatch?.campaignId;
+    if (!cid) continue;
+    spendMap.set(cid, (spendMap.get(cid) ?? 0) + Number(entry.amount ?? 0));
+  }
+
+  return campaigns.map(c => {
+    const totalBudget = Number(c.totalBudget ?? 0);
+    const spentBudget = spendMap.get(c.id) ?? 0;
+    const remainingBudget = Math.max(totalBudget - spentBudget, 0);
+
+    const uniqueCreators = new Set(c.submissions.map((s: any) => s.creatorId)).size;
+    const totalViews = c.submissions.reduce((sum: number, s: any) => {
+      const snap = s.metricSnapshots?.[0];
+      return sum + Number(snap?.viewCount ?? 0);
+    }, 0);
+
+    return {
+      id: c.id,
+      title: c.title,
+      description: c.description,
+      cpvRate: Number(c.cpvRate),
+      totalBudget,
+      spentBudget,
+      remainingBudget,
+      minimumPayoutViews: Number(c.minimumPayoutViews ?? 0),
+      maxPayoutPerSubmission: Number(c.maxPayoutPerSubmission ?? 0),
+      startDate: c.startDate,
+      endDate: c.endDate,
+      status: c.status,
+      brand: { companyName: c.brand.companyName },
+      creatorCount: uniqueCreators,
+      totalViews,
+    };
+  });
+}
+
 export async function updateCampaignStatus(campaignId: string, newStatus: CampaignStatus) {
   const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
   if (!campaign) throw new Error('Campaign not found');

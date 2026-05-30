@@ -386,7 +386,7 @@ export async function updateSubmissionReviewBatch(input: {
       throw new Error('No remaining campaign budget is available for this payout');
     }
 
-    return prisma.$transaction(async (tx) => {
+    const txResult = await prisma.$transaction(async (tx) => {
       const wallet = await ensureCreatorWallet(tx, batch.submission.creatorId);
       const pendingEntry = await getPendingLedgerEntryForBatch(tx, batch.id);
       const pendingAmount = Number(pendingEntry?.amount ?? batch.grossAmount ?? 0);
@@ -450,14 +450,6 @@ export async function updateSubmissionReviewBatch(input: {
         },
       });
 
-      await (tx.contentSubmission as any).update({
-        where: { id: batch.submissionId },
-        data: {
-          verifiedViews: (batch.submission.verifiedViews ?? 0) + batch.incrementalViews,
-          lastCheckedAt: new Date(),
-        },
-      });
-
       return (tx as any).submissionReviewBatch.update({
         where: { id: batch.id },
         data: {
@@ -470,6 +462,18 @@ export async function updateSubmissionReviewBatch(input: {
         },
       });
     });
+
+    // Update verifiedViews outside the transaction using the typed client
+    // (the (tx as any) cast inside the transaction silently drops this update)
+    await prisma.contentSubmission.update({
+      where: { id: batch.submissionId },
+      data: {
+        verifiedViews: (batch.submission.verifiedViews ?? 0) + batch.incrementalViews,
+        lastCheckedAt: new Date(),
+      },
+    });
+
+    return txResult;
   };
 
   if (input.action === 'VERIFY') {
