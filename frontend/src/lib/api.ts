@@ -81,4 +81,19 @@ export const rebuildYouTubeConnectedBaseline = () =>
 export const rebuildYouTubeLiveBaseline = (channelInput: string) =>
   api.post('/creators/baseline/rebuild/youtube-live', { channelInput });
 
+// admin
+export const getAdminStats = () => api.get('/admin/stats');
+export const getAdminUsers = () => api.get('/admin/users');
+export const suspendUser = (id: string) => api.delete(`/admin/users/${id}`);
+export const getPendingCampaigns = () => api.get('/admin/campaigns/pending');
+export const approveCampaign = (id: string) => api.patch(`/admin/campaigns/${id}/approve`);
+export const rejectCampaign = (id: string) => api.patch(`/admin/campaigns/${id}/reject`);
+export const getReviewQueue = (params?: { campaignId?: string; status?: string }) =>
+  api.get('/admin/review-batches', { params });
+export const getReviewBatchDetails = (id: string) => api.get(`/admin/review-batches/${id}`);
+export const updateReviewBatch = (id: string, data: { action: string; note?: string; amount?: number }) =>
+  api.patch(`/admin/review-batches/${id}`, data);
+export const runReviewSweep = (campaignId?: string) =>
+  api.post('/admin/review-batches/sweep', campaignId ? { campaignId } : {});
+
 export default api;

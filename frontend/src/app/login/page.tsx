@@ -38,6 +38,7 @@ export default function LoginPage() {
     setUser({ id: decoded.userId, email: userEmail, role: decoded.role });
     if (decoded.role === 'CREATOR') router.push('/dashboard/creator');
     else if (decoded.role === 'BRAND') router.push('/dashboard/brand');
+    else if (decoded.role === 'ADMIN') router.push('/dashboard/admin');
     else router.push('/');
   };
 
