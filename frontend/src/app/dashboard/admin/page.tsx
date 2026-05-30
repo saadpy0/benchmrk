@@ -456,7 +456,8 @@ function PostCampaignDashboard() {
   };
 
   return (
-    <div className="max-w-2xl">
+    <div className="flex justify-center">
+    <div className="w-full max-w-2xl">
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-zinc-800/80">
           <h3 className="text-sm font-semibold text-white">Post a Campaign</h3>
@@ -567,6 +568,7 @@ function PostCampaignDashboard() {
         </form>
       </div>
     </div>
+    </div>
   );
 }
 
@@ -623,7 +625,8 @@ export default function AdminDashboard() {
         )}
 
         {/* ── Mode toggle ── */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-1.5 flex gap-1.5 w-fit">
+        <div className="flex justify-center">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-1.5 flex gap-1.5">
           <button
             onClick={() => setMode('review')}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
@@ -650,6 +653,7 @@ export default function AdminDashboard() {
             </svg>
             Post Campaign
           </button>
+        </div>
         </div>
 
         {/* Mode content */}
